@@ -1,0 +1,25 @@
+# Every proposed change runs this repository's own verbs, from a clean checkout
+# (prj_structure/95 §Continuous integration). Every command is a verb, or a script under ci/.
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+        with:
+          just-version: 1.58.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: ci/install-tools.sh
+      - run: just build
+      - run: just lint
+      - run: just fmt
+      - run: just test
