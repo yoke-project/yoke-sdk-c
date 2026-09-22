@@ -4,9 +4,10 @@
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 status=0
-for script in "$dir"/*/*.sh; do
+# A check script is sourced into this shell, so the names here are ones no check script sets.
+for checks_file in "$dir"/*/*.sh; do
   # shellcheck source=/dev/null
-  source "$script"
+  source "$checks_file"
   while read -r id fn; do
     if out="$("$fn" 2>&1)"; then
       echo "pass  $id"
@@ -14,6 +15,6 @@ for script in "$dir"/*/*.sh; do
       echo "FAIL  $id — $out"
       status=1
     fi
-  done < <(awk '/# std: /{id=$3; next} id && /^check_[a-z_]+\(\)/{sub(/\(\).*/, ""); print id, $1; id=""}' "$script")
+  done < <(awk '/# std: /{id=$3; next} id && /^check_[a-z_]+\(\)/{sub(/\(\).*/, ""); print id, $1; id=""}' "$checks_file")
 done
 exit "$status"
