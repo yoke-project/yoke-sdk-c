@@ -1,0 +1,26 @@
+# The planning item's state follows the work (prj_structure/95 §Continuous integration, 471).
+# It verifies nothing, blocks nothing, and nothing in this repository depends on it having run.
+# Every command is a script under ci/, as the verify workflow's are.
+name: planning
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: ci/planning-status.sh ${{ github.event_name }}
+        env:
+          GH_TOKEN: ${{ secrets.PLANNING_STATUS_TOKEN }}
+          PLANNING_ORG: yoke-project
+          PLANNING_PROJECT: "1"
