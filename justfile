@@ -7,7 +7,15 @@ build:
 
 # Run this repository's own checks, with no sibling present.
 test:
-    @bash checks/run.sh
+    #!/usr/bin/env bash
+    # A run leaves its results where the record writer reads them, whatever it decided (472).
+    set -uo pipefail
+    mkdir -p .results
+    date -u +%Y-%m-%dT%H:%M:%SZ > .results/started
+    status=0
+    bash checks/run.sh | tee .results/checks.txt || status=1
+    date -u +%Y-%m-%dT%H:%M:%SZ > .results/finished
+    exit "$status"
 
 # This repository's static checks.
 lint:
