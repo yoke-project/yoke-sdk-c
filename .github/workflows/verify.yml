@@ -19,7 +19,17 @@ jobs:
         with:
           python-version: '3.14'
       - run: ci/install-tools.sh
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
       - run: just build
       - run: just lint
       - run: just fmt
       - run: just test
+      - run: ci/record.sh > record.json
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: record-L1
+          path: record.json
