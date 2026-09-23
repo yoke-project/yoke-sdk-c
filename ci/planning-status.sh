@@ -37,9 +37,10 @@ items_named_by_push() {
 }
 
 # items_closed_by_change prints the items a proposed change closes, as the forge itself resolved them.
+# It fails, printing nothing, when the query does — an error document read as data is a wrong item.
 items_closed_by_change() {
-  local repository="$1" number="$2"
-  gh api graphql -f owner="${repository%%/*}" -f name="${repository##*/}" -F number="$number" -f query='
+  local repository="$1" number="$2" answer
+  answer="$(gh api graphql -f owner="${repository%%/*}" -f name="${repository##*/}" -F number="$number" -f query='
     query($owner:String!,$name:String!,$number:Int!){
       repository(owner:$owner,name:$name){
         pullRequest(number:$number){
@@ -49,13 +50,14 @@ items_closed_by_change() {
         }
       }
     }' --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[]
-             | "\(.repository.nameWithOwner)#\(.number)"' 2>/dev/null | sort -u
+             | "\(.repository.nameWithOwner)#\(.number)"' 2>/dev/null)" || return 1
+  sort -u <<<"$answer"
 }
 
 # planning_field prints the project's identifier, its Status field's, and the identifier of one option.
 planning_field() {
-  local organisation="$1" project="$2" option="$3"
-  gh api graphql -f organisation="$organisation" -F project="$project" -f query='
+  local organisation="$1" project="$2" option="$3" answer
+  answer="$(gh api graphql -f organisation="$organisation" -F project="$project" -f query='
     query($organisation:String!,$project:Int!){
       organization(login:$organisation){
         projectV2(number:$project){
@@ -66,15 +68,17 @@ planning_field() {
     }' --jq "[.data.organization.projectV2.id,
               .data.organization.projectV2.field.id,
               (.data.organization.projectV2.field.options[] | select(.name==\"$option\") | .id)]
-             | @tsv" 2>/dev/null
+             | @tsv" 2>/dev/null)" || return 1
+  printf '%s\n' "$answer"
 }
 
 # item_in_project prints the identifier of an issue's item in the plan, and the state it is in. An
 # issue commonly sits in more than one project, so the plan's own number is what picks its item out.
 item_in_project() {
   local repository="$1" number="$2" project="$3"
-  [[ "$project" =~ ^[0-9]+$ ]] || return 0
-  gh api graphql -f owner="${repository%%/*}" -f name="${repository##*/}" -F number="$number" \
+  [[ "$project" =~ ^[0-9]+$ ]] || return 1
+  local answer
+  answer="$(gh api graphql -f owner="${repository%%/*}" -f name="${repository##*/}" -F number="$number" \
     -f query='
     query($owner:String!,$name:String!,$number:Int!){
       repository(owner:$owner,name:$name){
@@ -92,7 +96,8 @@ item_in_project() {
       }
     }' --jq "[.data.repository.issue.projectItems.nodes[]
               | select(.project.number==$project)
-              | [.id, (.fieldValueByName.name // \"\")]][0] | @tsv" 2>/dev/null
+              | [.id, (.fieldValueByName.name // \"\")]][0] | @tsv" 2>/dev/null)" || return 1
+  printf '%s\n' "$answer"
 }
 
 # move sets one item's state, and says what it did either way.
@@ -101,7 +106,10 @@ move() {
   local repository="${item%%#*}" number="${item##*#}"
 
   local found place state
-  found="$(item_in_project "$repository" "$number" "$project")"
+  if ! found="$(item_in_project "$repository" "$number" "$project")"; then
+    echo "planning: $item could not be read from the plan; nothing moved"
+    return 0
+  fi
   if [[ -z "$found" ]]; then
     echo "planning: $item is not in the plan; nothing moved"
     return 0
@@ -116,7 +124,10 @@ move() {
   fi
 
   local ids project_id field_id option_id
-  ids="$(planning_field "$organisation" "$project" "$destination")"
+  if ! ids="$(planning_field "$organisation" "$project" "$destination")"; then
+    echo "planning: the plan's own fields could not be read; nothing moved"
+    return 0
+  fi
   IFS=$'\t' read -r project_id field_id option_id <<<"$ids"
   if [[ -z "$option_id" ]]; then
     echo "planning: the plan has no state $destination; nothing moved"
@@ -160,7 +171,10 @@ main() {
       ;;
     pull_request)
       target="In Review"
-      items="$(items_closed_by_change "$repository" "$(jq -r '.number' "$event" 2>/dev/null)")"
+      if ! items="$(items_closed_by_change "$repository" "$(jq -r '.number' "$event" 2>/dev/null)")"; then
+        echo "planning: the items this change closes could not be read; nothing moved"
+        return 0
+      fi
       ;;
     *)
       echo "planning: nothing to do for $event_name"
