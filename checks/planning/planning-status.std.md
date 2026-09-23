@@ -56,3 +56,16 @@
 | **Precondition** | the event of a push whose commits name an item of this repository, an item of another, a number that is part of a word, and a commit naming none |
 | **Action** | ask the script which items that push names |
 | **Expected** | the two items, each qualified by its repository, and nothing else — a reference the forge would not resolve is not an item, and a workflow that guessed would move something nobody asked it to |
+
+## yoke-sdk-c:planning-status.05 — a query that fails moves nothing, and says so
+
+| Field | Value |
+| --- | --- |
+| **Cites** | prj_structure/95 §Continuous integration |
+| **Level** | L1 |
+| **Method** | check |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | a forge that answers every query with an error document, as one does for a repository the credential cannot resolve |
+| **Action** | ask the script which items a proposed change closes, and then run it over that change |
+| **Expected** | the query reports that it failed and prints nothing that could be read as an item; the run says the items could not be read, moves nothing, and still exits zero — an error document passed on as data is how a failure becomes a wrong identifier |

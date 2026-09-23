@@ -96,3 +96,34 @@ JSON
 ' "yoke-project/meta-yoke#7" "yoke-project/yoke-sdk-c#3" | sort)"
   [[ "$(sort <<<"$named")" == "$want" ]] || { echo "it read: $(tr '\n' ' ' <<<"$named")"; return 1; }
 }
+
+# std: yoke-sdk-c:planning-status.05
+check_a_failed_query_moves_nothing() {
+  [[ -f "$planning_script" ]] || { echo "no script"; return 1; }
+  # shellcheck source=/dev/null
+  source "$planning_script"
+
+  local tmp; tmp="$(mktemp -d)"
+  cat > "$tmp/gh" <<'SH'
+#!/usr/bin/env bash
+echo '{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a Repository"}]}'
+exit 1
+SH
+  chmod +x "$tmp/gh"
+  printf '{ "number": 1 }\n' > "$tmp/event.json"
+
+  local out status
+  out="$(PATH="$tmp:$PATH" items_closed_by_change "yoke-project/yoke" 1 2>/dev/null)"
+  status=$?
+  if (( status == 0 )); then rm -rf "$tmp"; echo "a failed query was reported as a success"; return 1; fi
+  if [[ -n "$out" ]]; then rm -rf "$tmp"; echo "a failed query printed what would be read as an item: $out"; return 1; fi
+
+  out="$(PATH="$tmp:$PATH" GH_TOKEN=a-credential PLANNING_ORG=yoke-project PLANNING_PROJECT=1 \
+    GITHUB_REPOSITORY=yoke-project/yoke-sdk-c GITHUB_EVENT_PATH="$tmp/event.json" \
+    "$planning_script" pull_request 2>&1)"
+  status=$?
+  rm -rf "$tmp"
+  (( status == 0 )) || { echo "the run exited $status: $out"; return 1; }
+  [[ "$out" == *"could not be read"* ]] || { echo "it did not say the query failed: $out"; return 1; }
+  [[ "$out" != *errors* ]] || { echo "it passed the error document on: $out"; return 1; }
+}
