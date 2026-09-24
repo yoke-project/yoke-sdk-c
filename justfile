@@ -1,4 +1,4 @@
-# The six verbs every repository defines (prj_structure/95 §The verbs).
+# The six verbs every repository defines.
 # A verb with nothing to do says so in one line, so a fan-out can tell a gap from a statement.
 
 # Build this repository's codebase.
@@ -8,7 +8,7 @@ build:
 # Run this repository's own checks, with no sibling present.
 test:
     #!/usr/bin/env bash
-    # A run leaves its results where the record writer reads them, whatever it decided (472).
+    # A run leaves its results where the record writer reads them, whatever it decided.
     set -uo pipefail
     mkdir -p .results
     date -u +%Y-%m-%dT%H:%M:%SZ > .results/started
@@ -34,13 +34,13 @@ fmt:
     clang-format --dry-run -Werror $files
     echo "fmt: every file is formatted"
 
-# Verify the toolchain against the floor the workspace's fan-out passes (466).
+# Verify the toolchain against the floor the workspace's fan-out passes.
 develop floor="":
     #!/usr/bin/env bash
     set -euo pipefail
     found="$(just --version | awk '{print $2}')"
     if [[ -z "{{floor}}" ]]; then
-        echo "develop: no floor given, so none verified — the workspace passes it (466); found just $found"
+        echo "develop: no floor given, so none verified — the workspace passes it; found just $found"
         exit 0
     fi
     if ! [[ "{{floor}}" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
@@ -54,6 +54,6 @@ develop floor="":
     fi
     echo "develop: just $found meets the floor {{floor}}"
 
-# Publish into this repository's ecosystem, one manifest line per publication (393).
+# Publish into this repository's ecosystem, one manifest line per publication.
 release:
     @echo "release: nothing to publish from yoke-sdk-c yet"

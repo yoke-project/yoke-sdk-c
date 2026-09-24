@@ -46,7 +46,7 @@ record_fixture() {
 check_the_record_is_assembled_from_them() {
   [[ -x "$record_script" ]] || { echo "no ci/record.sh"; return 1; }
   command -v python3 >/dev/null || { echo "no python3"; return 1; }
-  command -v go >/dev/null || { echo "no go, and the tool comes from the module proxy (472)"; return 1; }
+  command -v go >/dev/null || { echo "no go, and the tool comes from the module proxy"; return 1; }
 
   local tmp written
   tmp="$(mktemp -d)"
@@ -80,7 +80,7 @@ PY
 # std: yoke-sdk-c:the-record-of-a-run.03
 check_a_failing_run_is_recorded_as_one() {
   [[ -x "$record_script" ]] || { echo "no ci/record.sh"; return 1; }
-  command -v go >/dev/null || { echo "no go, and the tool comes from the module proxy (472)"; return 1; }
+  command -v go >/dev/null || { echo "no go, and the tool comes from the module proxy"; return 1; }
 
   local tmp written
   tmp="$(mktemp -d)"
