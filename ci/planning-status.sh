@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Moves forward the planning item of everything this change names (prj_structure/95 §Continuous
-# integration, 471). It verifies nothing and blocks nothing: with no credential it says so and exits
-# zero, and every failure of its own is reported and never propagated.
+# Moves forward the planning item of everything this change names. It verifies nothing and
+# blocks nothing: with no credential it says so and exits zero, and every failure of its own is
+# reported and never propagated.
 #
 # It moves an item forward only — Todo, then In Progress, then In Review — and never to Done, which
 # the planning tool sets itself when the issue closes.

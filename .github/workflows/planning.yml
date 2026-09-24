@@ -1,4 +1,4 @@
-# The planning item's state follows the work (prj_structure/95 §Continuous integration, 471).
+# The planning item's state follows the work.
 # It verifies nothing, blocks nothing, and nothing in this repository depends on it having run.
 # Every command is a script under ci/, as the verify workflow's are.
 name: planning

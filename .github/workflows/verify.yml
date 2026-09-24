@@ -1,5 +1,5 @@
-# Every proposed change runs this repository's own verbs, from a clean checkout
-# (prj_structure/95 §Continuous integration). Every command is a verb, or a script under ci/.
+# Every proposed change runs this repository's own verbs, from a clean checkout.
+# Every command is a verb, or a script under ci/.
 name: verify
 
 on:
