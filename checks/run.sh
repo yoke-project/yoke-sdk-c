@@ -9,12 +9,20 @@ for checks_file in "$dir"/*/*.sh; do
   # shellcheck source=/dev/null
   source "$checks_file"
   while read -r id fn; do
+    # A marker the runner found no check after is a case that would otherwise reach the record absent.
+    if [[ "$fn" == "-" ]]; then
+      echo "FAIL  $id — no check follows its marker"
+      status=1
+      continue
+    fi
     if out="$("$fn" 2>&1)"; then
       echo "pass  $id"
     else
       echo "FAIL  $id — $out"
       status=1
     fi
-  done < <(awk '/# std: /{id=$3; next} id && /^check_[a-z_]+\(\)/{sub(/\(\).*/, ""); print id, $1; id=""}' "$checks_file")
+  done < <(awk '/# std: /{if (id) print id, "-"; id=$3; next}
+               id && /^check_[a-z0-9_]+\(\)/{sub(/\(\).*/, ""); print id, $1; id=""}
+               END{if (id) print id, "-"}' "$checks_file")
 done
 exit "$status"
