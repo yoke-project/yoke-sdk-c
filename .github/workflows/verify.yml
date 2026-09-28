@@ -19,9 +19,7 @@ jobs:
         with:
           python-version: '3.14'
       - run: ci/install-tools.sh
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.26'
+      - run: just develop
       - run: just build
       - run: just lint
       - run: just fmt
