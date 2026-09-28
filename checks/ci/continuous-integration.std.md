@@ -16,7 +16,7 @@
 | **Label** | blocking |
 | **Precondition** | a clean checkout, and the repository's workflow |
 | **Action** | read the workflow's triggers and every command it runs |
-| **Expected** | it runs on every proposed change; `build`, `test`, `lint` and `fmt` are each run as `just <verb>`; and every other command is one of the repository's own scripts under `ci/` — the obligation lives in the repository, and the platform only calls it |
+| **Expected** | it runs on every proposed change; `build`, `test`, `lint` and `fmt` are each run as `just <verb>`, after `just develop` has set up what they call; and every other command is one of the repository's own scripts under `ci/` — the obligation lives in the repository, and the platform only calls it |
 
 ## yoke-sdk-c:continuous-integration.02 — what a run needs is declared, not taken from the runner
 

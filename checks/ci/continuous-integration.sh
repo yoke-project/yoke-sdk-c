@@ -19,7 +19,7 @@ check_verbs_on_every_change() {
     grep -qx "just $verb" <<<"$commands" || { echo "'just $verb' is not run"; return 1; }
   done
   local other
-  other="$(grep -vE '^just (build|test|lint|fmt)$' <<<"$commands" | grep -vE '^ci/' || true)"
+  other="$(grep -vE '^just (develop|build|test|lint|fmt)$' <<<"$commands" | grep -vE '^ci/' || true)"
   [[ -z "$other" ]] || { echo "a step does work of its own: $other"; return 1; }
 }
 
