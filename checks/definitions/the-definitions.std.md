@@ -55,7 +55,7 @@
 | **Label** | blocking |
 | **Precondition** | the generators the record names, on `PATH` |
 | **Action** | run `ci/definitions.sh check` |
-| **Expected** | it exits zero: the module fetched is the one published, and generating every contract the record names, with the well-known types they import, gives the committed tree file for file |
+| **Expected** | it exits zero: the module fetched is the one published, and generating the messages of every contract the record names, without its services, and the well-known types they import, gives the committed tree file for file |
 
 ## yoke-sdk-c:the-definitions.05 — a contract the generator cannot express is refused by name
 
