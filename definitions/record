@@ -1,0 +1,6 @@
+module github.com/yoke-project/yoke/proto
+version v0.2.0
+digest h1:ekr+IpBSLcIOOan2dhGoRzgnXRc34AtEmvlLba17iCk=
+protoc 3.21.12
+protoc-c 1.4.1
+contracts plugin
