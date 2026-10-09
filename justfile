@@ -1,16 +1,14 @@
 # The six verbs every repository defines.
 # A verb with nothing to do says so in one line, so a fan-out can tell a gap from a statement.
 
-# Build this repository's codebase.
+# Build this repository's codebase: the generated definitions, the base and the plugin library, and
+# the programs that run their cases.
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    mkdir -p build
-    for source in $(find definitions -name '*.c' | sort); do
-        object="build/$(echo "${source%.c}" | tr / _).o"
-        cc -std=c11 -Wall -Werror -c -I definitions -o "$object" "$source"
-    done
-    echo "build: the generated definitions compile"
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo > /dev/null
+    cmake --build build --parallel
+    echo "build: the definitions, the base and the plugin library compile"
 
 # Run this repository's own checks, with no sibling present.
 test:
@@ -27,7 +25,21 @@ test:
         echo "test: yoke-verify is not on PATH; \`just develop\` puts it there"
         status=1
     fi
-    bash checks/run.sh | tee .results/checks.txt || status=1
+    # The library's cases are the programs build made; each reports its cases as the checks do.
+    (
+      failed=0
+      bash checks/run.sh || failed=1
+      for program in base_test plugin_test; do
+        if [[ -x "build/$program" ]]; then
+          "build/$program" || failed=1
+        else
+          echo "FAIL  build/$program — it is not built; \`just build\` makes it"
+          failed=1
+        fi
+      done
+      exit "$failed"
+    ) | tee .results/checks.txt
+    [[ "${PIPESTATUS[0]}" == 0 ]] || status=1
     date -u +%Y-%m-%dT%H:%M:%SZ > .results/finished
     exit "$status"
 
@@ -43,7 +55,7 @@ lint:
 fmt:
     #!/usr/bin/env bash
     set -euo pipefail
-    files="$(find . \( -name '*.c' -o -name '*.h' \) -not -path './.git/*' -not -path './definitions/*' | sort)"
+    files="$(find . \( -name '*.c' -o -name '*.h' \) -not -path './.git/*' -not -path './definitions/*' -not -path './build/*' | sort)"
     if [[ -z "$files" ]]; then echo "fmt: nothing to format yet"; exit 0; fi
     clang-format --dry-run -Werror $files
     echo "fmt: every file is formatted"
