@@ -3,4 +3,4 @@ version v0.3.0
 digest h1:o37BRUGieMvtFxM/VdBYbf7TGIELBfkXz9zHwAAl8NE=
 protoc 3.21.12
 protoc-c 1.4.1
-contracts plugin
+contracts plugin interface
