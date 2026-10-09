@@ -1,0 +1,3 @@
+# What the container build copies is the source, never what a build or a run left in the tree.
+build/
+.results/
