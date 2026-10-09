@@ -1,0 +1,4 @@
+# The form `fmt` holds the C sources to; the generated definitions are left as they were generated.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 110
