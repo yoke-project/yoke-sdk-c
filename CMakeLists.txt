@@ -39,3 +39,18 @@ foreach(program base/base_test plugin/plugin_test)
     target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(${name} PRIVATE yoke-c-testing)
 endforeach()
+
+# The harness the conformance suite drives, and its cases. It speaks to the suite in JSON, through
+# json-c, and to the Core only through the library under test.
+pkg_check_modules(JSONC REQUIRED IMPORTED_TARGET json-c)
+add_library(yoke-c-harness STATIC harness/harness.c)
+target_include_directories(yoke-c-harness PUBLIC harness)
+target_compile_options(yoke-c-harness PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(yoke-c-harness PRIVATE _GNU_SOURCE)
+target_link_libraries(yoke-c-harness PUBLIC yoke-c PkgConfig::JSONC Threads::Threads)
+add_executable(yoke-c-plugin-harness harness/main.c)
+target_link_libraries(yoke-c-plugin-harness PRIVATE yoke-c-harness)
+add_executable(harness_test harness/harness_test.c)
+target_compile_definitions(harness_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}" _GNU_SOURCE)
+target_compile_options(harness_test PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(harness_test PRIVATE yoke-c-harness yoke-c-testing)

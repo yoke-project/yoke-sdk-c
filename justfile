@@ -29,7 +29,7 @@ test:
     (
       failed=0
       bash checks/run.sh || failed=1
-      for program in base_test plugin_test; do
+      for program in base_test plugin_test harness_test; do
         if [[ -x "build/$program" ]]; then
           "build/$program" || failed=1
         else
