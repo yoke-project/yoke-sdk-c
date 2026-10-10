@@ -24,6 +24,7 @@ jobs:
       - run: just lint
       - run: just fmt
       - run: just test
+      - run: ci/conformance.sh
       - run: ci/record.sh > record.json
         if: always()
       - uses: actions/upload-artifact@v7
