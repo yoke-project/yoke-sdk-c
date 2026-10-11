@@ -8,8 +8,10 @@ contract under the conformance suite. It speaks gRPC through gRPC's core C API, 
 generated with protobuf-c.
 
 It is not the Core, and it holds no contract definitions of its own: the C it builds on is generated
-from the published definitions, at the version `definitions/record` pins. It is distributed as
-source; nothing is published from it to a package registry yet.
+from the published definitions, at the version `definitions/record` pins. It is released as its
+source: an archive of the tagged tree, which `cmake --install` turns into the library, its headers, a
+CMake package config for `find_package(yoke-sdk-c)` and a `yoke-sdk-c.pc` for `pkg-config`. No package
+manager is involved.
 
 ## What is where
 
@@ -21,6 +23,7 @@ source; nothing is published from it to a package registry yet.
 | `harness/` | The library's harness for the conformance suite |
 | `definitions/` | The generated C of the plugin and interface contracts, and `record`, which pins the definitions' version, digest and generators |
 | `testing/` | What the programs that run the cases share |
+| `cmake/` | The package config and the pkg-config file `cmake --install` writes |
 | `checks/`, `ci/` | This repository's own checks, and the scripts continuous integration runs; `ci/definitions.sh` regenerates `definitions/` |
 
 A test's description sits beside the test, as a `.std.md` file.
@@ -40,7 +43,7 @@ with all of it.
 | `just lint` | Parses every shell script |
 | `just fmt` | Fails, naming each file, when a C file is not formatted |
 | `just develop` | Verifies the installed `just` against a floor, given as `just develop 1.58.0`, and installs `yoke-verify` |
-| `just release` | Says there is nothing to publish yet |
+| `just release` | Hands the source archive to the release of the tag that names this commit; run by the release, not by hand |
 
 ## Where the depth is
 
