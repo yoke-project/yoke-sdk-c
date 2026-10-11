@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/@PC_TO_PREFIX@
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: yoke-sdk-c
+Description: The C library a Plugin unit of Yoke is written with
+Version: @PROJECT_VERSION@
+Requires: grpc libprotobuf-c
+Libs: -L${libdir} -lyoke-c -lpthread
+Cflags: -I${includedir}

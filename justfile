@@ -83,4 +83,11 @@ develop floor="" verify="":
 
 # Publish into this repository's ecosystem, one manifest line per publication.
 release:
-    @echo "release: nothing to publish from yoke-sdk-c yet"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The published release verb of `yoke`, handing over this family's source alone, as the source release
+    # C is consumed as: the archive of the tagged tree, to the tag's release. It is resolved at its source,
+    # since the proxy may still hold an older answer for a branch, with git's automatic collection off,
+    # which would otherwise rewrite the shallow clone under go's second fetch.
+    version="$(cd "$(mktemp -d)" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0 GOPROXY=direct go list -m -f '{{{{.Version}}' github.com/yoke-project/yoke@main)"
+    go run "github.com/yoke-project/yoke/cmd/yoke-release@$version" -source yoke-sdk-c
