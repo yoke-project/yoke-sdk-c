@@ -225,3 +225,29 @@
 | **Precondition** | one stream activated on the ordered transport |
 | **Action** | the channel stops it; the author emits on it |
 | **Expected** | the library closes its connection, acknowledges the stop as done, and hands the author the stop; the emission is refused with `stream.inactive`, and nothing reaches the socket |
+
+## yoke-sdk-c:the-plugin-library.18 — the registration offers the shared ring, which this library writes
+
+| Field | Value |
+| --- | --- |
+| **Cites** | arch/50-plugin-surface/07 §The shared ring · arch/50-plugin-surface/03 §What a registration claims |
+| **Level** | L1 |
+| **Method** | test |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | a declaration and a channel standing in for the Core |
+| **Action** | start the unit |
+| **Expected** | the registration names one transport offered, the shared object |
+
+## yoke-sdk-c:the-plugin-library.19 — on the shared ring, Emit writes the slot its sequence selects and wakes every waiter
+
+| Field | Value |
+| --- | --- |
+| **Cites** | arch/50-plugin-surface/07 §The shared ring |
+| **Level** | L1 |
+| **Method** | test |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | an open Session; a ring of layout 1, four slots of eight bytes, in memory the test made; a packet socket the test listens on, which hands the ring's descriptor on one byte to the connection it accepts; and a second socket handing memory that is not a ring |
+| **Action** | the channel activates a loss-tolerant stream at the first socket and another at the second; the author emits `abc`, then `defgh`, then nine bytes |
+| **Expected** | the first activation is acknowledged as done and the second as failed, with a line; after the two frames the first slot holds sequence 1, a clock and `abc`, the second sequence 2 and `defgh`, the header's published sequence is 2 and the wake word has moved twice; the nine bytes are refused `stream.inactive`, a slot holding eight, and nothing is published for them |

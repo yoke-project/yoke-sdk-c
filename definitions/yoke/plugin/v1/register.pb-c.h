@@ -15,6 +15,7 @@ PROTOBUF_C__BEGIN_DECLS
 #endif
 
 #include "google/protobuf/duration.pb-c.h"
+#include "yoke/plugin/v1/families.pb-c.h"
 
 typedef struct Yoke__Plugin__V1__RegisterRequest Yoke__Plugin__V1__RegisterRequest;
 typedef struct Yoke__Plugin__V1__Surface Yoke__Plugin__V1__Surface;
@@ -79,10 +80,16 @@ struct  Yoke__Plugin__V1__RegisterRequest
    * The declared surface.
    */
   Yoke__Plugin__V1__Surface *declared;
+  /*
+   * The transports this library offers beyond the ordered and the framed, which every library speaks.
+   * The Core activates a stream that tolerates loss on the shared object only for a library that names it.
+   */
+  size_t n_transports;
+  Yoke__Plugin__V1__Control__Activate__Transport *transports;
 };
 #define YOKE__PLUGIN__V1__REGISTER_REQUEST__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&yoke__plugin__v1__register_request__descriptor) \
-    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, 0, (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, NULL }
+    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, 0, (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, NULL, 0,NULL }
 
 
 /*
