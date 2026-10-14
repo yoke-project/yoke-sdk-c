@@ -7,10 +7,15 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <linux/futex.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -46,6 +51,10 @@ typedef struct flow {
     char *stream;
     int fd;
     bool framed;
+    /* On the shared ring: the mapping, its geometry, and the last sequence published into it. */
+    unsigned char *ring;
+    size_t ring_size;
+    unsigned slots, capacity;
     pthread_mutex_t mu;
     unsigned long long next;
     int refs; /* the unit's list holds one, and every emission in progress one */
@@ -445,6 +454,9 @@ static void release(yoke_unit *u, flow *f) {
     bool last = --f->refs == 0;
     pthread_mutex_unlock(&u->mu);
     if (last) {
+        if (f->ring != NULL) {
+            munmap(f->ring, f->ring_size);
+        }
         close(f->fd);
         pthread_mutex_destroy(&f->mu);
         free(f->stream);
@@ -465,6 +477,118 @@ static flow *unlink_flow(yoke_unit *u, const char *stream) {
     return NULL;
 }
 
+/* The shared ring, layout 1: a 64-byte header, then slots of a 32-byte header and capacity bytes. */
+#define RING_HEADER 64
+#define RING_SLOT_HEADER 32
+#define RING_OFF_SLOTS 12
+#define RING_OFF_CAPACITY 16
+#define RING_OFF_PUBLISHED 24
+#define RING_OFF_WAKE 32
+
+static uint32_t le32_at(const unsigned char *b) {
+    return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
+}
+
+static void put_le(unsigned char *b, unsigned long long v, int n) {
+    for (int i = 0; i < n; i++) {
+        b[i] = (unsigned char)(v >> (8 * i));
+    }
+}
+
+/*
+ * Takes the descriptor the Core hands the first connection to a ring's socket, on one byte, maps it for
+ * writing and reads its geometry from its header; 0, or -1 with the reason.
+ */
+static int open_ring(flow *f, const char *stream, char **why) {
+    char byte;
+    struct iovec io = {.iov_base = &byte, .iov_len = 1};
+    union {
+        char buf[CMSG_SPACE(sizeof(int))];
+        struct cmsghdr align;
+    } control;
+    memset(&control, 0, sizeof control);
+    struct msghdr m = {
+        .msg_iov = &io, .msg_iovlen = 1, .msg_control = control.buf, .msg_controllen = sizeof control.buf};
+    const char *reason = NULL;
+    int memory = -1;
+    if (recvmsg(f->fd, &m, MSG_CMSG_CLOEXEC) != 1) {
+        reason = "no descriptor was handed";
+    } else {
+        struct cmsghdr *c = CMSG_FIRSTHDR(&m);
+        if (c == NULL || c->cmsg_level != SOL_SOCKET || c->cmsg_type != SCM_RIGHTS ||
+            c->cmsg_len != CMSG_LEN(sizeof(int))) {
+            reason = "no descriptor was handed";
+        } else {
+            memcpy(&memory, CMSG_DATA(c), sizeof memory);
+        }
+    }
+    struct stat st;
+    if (reason == NULL && (fstat(memory, &st) != 0 || st.st_size < RING_HEADER)) {
+        reason = "the memory handed is shorter than a ring's header";
+    }
+    if (reason == NULL) {
+        f->ring_size = (size_t)st.st_size;
+        f->ring = mmap(NULL, f->ring_size, PROT_READ | PROT_WRITE, MAP_SHARED, memory, 0);
+        if (f->ring == MAP_FAILED) {
+            f->ring = NULL;
+            reason = "the memory handed cannot be mapped";
+        }
+    }
+    if (memory >= 0) {
+        close(memory);
+    }
+    if (reason == NULL) {
+        f->slots = le32_at(f->ring + RING_OFF_SLOTS);
+        f->capacity = le32_at(f->ring + RING_OFF_CAPACITY);
+        if (memcmp(f->ring, "YOKERING", 8) != 0) {
+            reason = "the memory handed is not a ring";
+        } else if (le32_at(f->ring + 8) != 1) {
+            reason = "the ring is of a layout this library does not write";
+        } else if (f->slots == 0 ||
+                   RING_HEADER + (size_t)f->slots * (RING_SLOT_HEADER + f->capacity) > f->ring_size) {
+            reason = "the ring's geometry does not fit its memory";
+        }
+        if (reason != NULL) {
+            munmap(f->ring, f->ring_size);
+            f->ring = NULL;
+        }
+    }
+    if (reason != NULL) {
+        if (asprintf(why, "the ring of %s: %s", stream, reason) < 0) {
+            *why = NULL;
+        }
+        return -1;
+    }
+    f->next = __atomic_load_n((uint64_t *)(void *)(f->ring + RING_OFF_PUBLISHED), __ATOMIC_ACQUIRE);
+    return 0;
+}
+
+/*
+ * Publishes one frame into the slot its sequence selects, then the sequence, then wakes every reader
+ * waiting on the shared word. Holds the flow's mutex. A frame larger than a slot is refused.
+ */
+static int publish_ring(flow *f, unsigned long long sequence, const void *payload, size_t len) {
+    if (len > f->capacity) {
+        return -1;
+    }
+    unsigned char *slot =
+        f->ring + RING_HEADER + (size_t)((sequence - 1) % f->slots) * (RING_SLOT_HEADER + f->capacity);
+    uint64_t *published = (uint64_t *)(void *)slot;
+    __atomic_store_n(published, 0, __ATOMIC_RELEASE);
+    put_le(slot + 8, (unsigned long long)yoke_now(), 8);
+    put_le(slot + 16, len, 4);
+    if (len > 0) {
+        memcpy(slot + RING_SLOT_HEADER, payload, len);
+    }
+    __atomic_store_n(published, (uint64_t)sequence, __ATOMIC_RELEASE);
+    __atomic_store_n((uint64_t *)(void *)(f->ring + RING_OFF_PUBLISHED), (uint64_t)sequence,
+                     __ATOMIC_RELEASE);
+    uint32_t *wake = (uint32_t *)(void *)(f->ring + RING_OFF_WAKE);
+    __atomic_add_fetch(wake, 1, __ATOMIC_RELEASE);
+    syscall(SYS_futex, wake, FUTEX_WAKE, INT32_MAX, NULL, NULL, 0);
+    return 0;
+}
+
 /* Reaches the transport an activation names, as the Core created it; 0, or -1 with the reason. */
 static int connect_flow(const Yoke__Plugin__V1__Control__Activate *a, flow **out, char **why) {
     const char *name = NULL;
@@ -477,6 +601,10 @@ static int connect_flow(const Yoke__Plugin__V1__Control__Activate *a, flow **out
     case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED:
         name = "framed";
         type = SOCK_DGRAM;
+        break;
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT:
+        name = "shared";
+        type = SOCK_SEQPACKET;
         break;
     default: {
         char *transport = spoken(&yoke__plugin__v1__control__activate__transport__descriptor,
@@ -516,13 +644,28 @@ static int connect_flow(const Yoke__Plugin__V1__Control__Activate *a, flow **out
     f->framed = type == SOCK_DGRAM;
     f->refs = 1;
     pthread_mutex_init(&f->mu, NULL);
+    if (a->transport == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT &&
+        open_ring(f, a->stream, why) != 0) {
+        close(fd);
+        pthread_mutex_destroy(&f->mu);
+        free(f->stream);
+        free(f);
+        return -1;
+    }
     *out = f;
     (void)name;
     return 0;
 }
 
 static const char *transport_name(Yoke__Plugin__V1__Control__Activate__Transport t) {
-    return t == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED ? "framed" : "ordered";
+    switch (t) {
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED:
+        return "framed";
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT:
+        return "shared_object";
+    default:
+        return "ordered";
+    }
 }
 
 static void acknowledge(yoke_unit *u, const char *to, Yoke__Plugin__V1__Ack__Outcome outcome,
@@ -553,6 +696,18 @@ int yoke_emit(yoke_unit *u, const char *stream, const void *payload, size_t len,
     int result = 0;
     pthread_mutex_lock(&f->mu);
     unsigned long long sequence = ++f->next;
+    if (f->ring != NULL) {
+        if (publish_ring(f, sequence, payload, len) != 0) {
+            f->next--;
+            yoke_error_refuse(err, "stream.inactive",
+                              "the transport of %s took nothing: the frame is %zu bytes, and a slot holds %u",
+                              stream, len, f->capacity);
+            result = -1;
+        }
+        pthread_mutex_unlock(&f->mu);
+        release(u, f);
+        return result;
+    }
     unsigned char *message = NULL;
     size_t size = 0;
     if (f->framed) {
@@ -939,6 +1094,11 @@ static Yoke__Plugin__V1__RegisterResponse *register_unit(grpc_channel *channel, 
     request.language = "c";
     request.sdk_line = YOKE_SDK_LINE;
     request.declared = &declared;
+    /* This library writes the shared ring, so a stream of it that tolerates loss may be carried there. */
+    Yoke__Plugin__V1__Control__Activate__Transport offered[] = {
+        YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT};
+    request.n_transports = 1;
+    request.transports = offered;
     grpc_byte_buffer *sent = yoke_pack(&request.base);
     free(owned[0]);
     free(owned[1]);

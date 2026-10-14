@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -819,6 +820,126 @@ done:
     close_all(ch, u);
 }
 
+// std: yoke-sdk-c:the-plugin-library.18
+static void test_the_registration_offers_the_shared_ring(void) {
+    channel *ch = NULL;
+    yoke_unit *u = open_unit(&ch, NULL);
+    REQUIRE(u != NULL, "the unit did not start");
+    const Yoke__Plugin__V1__RegisterRequest *r = channel_request(ch);
+    REQUIRE(r != NULL && r->n_transports == 1 &&
+                r->transports[0] == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT,
+            "the registration offers %zu transports", r ? r->n_transports : 0);
+done:
+    close_all(ch, u);
+}
+
+/* A ring of layout 1: slots slots of capacity bytes, in a memory file; its descriptor, or -1. */
+static int ring_of(unsigned slots, unsigned capacity, bool genuine) {
+    int fd = memfd_create("ring", MFD_CLOEXEC);
+    size_t size = 64 + (size_t)slots * (32 + capacity);
+    if (fd < 0 || ftruncate(fd, (off_t)size) != 0) {
+        return -1;
+    }
+    unsigned char header[64] = {0};
+    memcpy(header, genuine ? "YOKERING" : "NOTARING", 8);
+    header[8] = 1;
+    for (int i = 0; i < 4; i++) {
+        header[12 + i] = (unsigned char)(slots >> (8 * i));
+        header[16 + i] = (unsigned char)(capacity >> (8 * i));
+    }
+    if (pwrite(fd, header, sizeof header, 0) != (ssize_t)sizeof header) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+/* Accepts one connection on listener and hands it the descriptor, on one byte. */
+static bool hand(int listener, int ring) {
+    if (!readable(listener, 3000)) {
+        return false;
+    }
+    int conn = accept(listener, NULL, NULL);
+    if (conn < 0) {
+        return false;
+    }
+    char byte = 0;
+    struct iovec io = {.iov_base = &byte, .iov_len = 1};
+    union {
+        char buf[CMSG_SPACE(sizeof(int))];
+        struct cmsghdr align;
+    } control = {0};
+    struct msghdr m = {
+        .msg_iov = &io, .msg_iovlen = 1, .msg_control = control.buf, .msg_controllen = sizeof control.buf};
+    struct cmsghdr *c = CMSG_FIRSTHDR(&m);
+    c->cmsg_level = SOL_SOCKET;
+    c->cmsg_type = SCM_RIGHTS;
+    c->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(c), &ring, sizeof(int));
+    bool sent = sendmsg(conn, &m, 0) == 1;
+    /* The connection is held by the library for the stream's life; the case lets its end go. */
+    return sent;
+}
+
+// std: yoke-sdk-c:the-plugin-library.19
+static void test_on_the_shared_ring_emit_writes_the_slot_and_wakes(void) {
+    channel *ch = NULL;
+    yoke_event ev = {0};
+    yoke_error err = {0};
+    int ring = ring_of(4, 8, true), fake = ring_of(4, 8, false);
+    char good[256], bad[256], good_id[32], bad_id[32];
+    snprintf(good, sizeof good, "%s/ring.sock", check_dir());
+    snprintf(bad, sizeof bad, "%s/fake.sock", check_dir());
+    int listener = listen_at(good, SOCK_SEQPACKET), other = listen_at(bad, SOCK_SEQPACKET);
+    unsigned char *mem = MAP_FAILED;
+    size_t size = 64 + 4 * (32 + 8);
+    yoke_unit *u = open_unit(&ch, NULL);
+    REQUIRE(u != NULL && ring >= 0 && fake >= 0 && listener >= 0 && other >= 0, "the case cannot be set up");
+    activate(ch, "station.preview", YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT,
+             good, good_id);
+    REQUIRE(hand(listener, ring), "the ring could not be handed");
+    activate(ch, "station.raw", YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT, bad,
+             bad_id);
+    REQUIRE(hand(other, fake), "the false ring could not be handed");
+    size_t from = 0;
+    const Yoke__Plugin__V1__Ack *a = ack_of(ch, good_id, &from);
+    REQUIRE(a != NULL && a->outcome == YOKE__PLUGIN__V1__ACK__OUTCOME__OUTCOME_DONE,
+            "the activation on the ring is not acknowledged as done: %s", a ? a->line : "no ack");
+    from = 0;
+    a = ack_of(ch, bad_id, &from);
+    REQUIRE(a != NULL && a->outcome == YOKE__PLUGIN__V1__ACK__OUTCOME__OUTCOME_FAILED && a->line[0] != '\0',
+            "the activation on memory that is not a ring is not acknowledged as failed, with a line");
+    REQUIRE(next_of(u, &ev, YOKE_ACTIVATED), "the activation was not handed to the author");
+    REQUIRE(yoke_emit(u, "station.preview", "abc", 3, &err) == 0, "the first frame was refused: %s",
+            err.message);
+    REQUIRE(yoke_emit(u, "station.preview", "defgh", 5, &err) == 0, "the second frame was refused: %s",
+            err.message);
+    REQUIRE(yoke_emit(u, "station.preview", "123456789", 9, &err) == -1 &&
+                yoke_is_refusal(&err, "stream.inactive"),
+            "nine bytes into a slot of eight were not refused");
+    mem = mmap(NULL, size, PROT_READ, MAP_SHARED, ring, 0);
+    REQUIRE(mem != MAP_FAILED, "the case cannot read the ring");
+    const unsigned char *first = mem + 64, *second = mem + 64 + 40;
+    REQUIRE(le64(first) == 1 && le64(first + 8) != 0 && first[16] == 3 && memcmp(first + 32, "abc", 3) == 0,
+            "the first slot holds sequence %llu, %u bytes", le64(first), first[16]);
+    REQUIRE(le64(second) == 2 && second[16] == 5 && memcmp(second + 32, "defgh", 5) == 0,
+            "the second slot holds sequence %llu, %u bytes", le64(second), second[16]);
+    REQUIRE(le64(mem + 24) == 2, "the published sequence is %llu", le64(mem + 24));
+    REQUIRE(mem[32] == 2, "the wake word moved %u times", mem[32]);
+done:
+    if (mem != MAP_FAILED) {
+        munmap(mem, size);
+    }
+    yoke_event_clear(&ev);
+    yoke_error_clear(&err);
+    close_all(ch, u);
+    for (int *fd = (int[]){ring, fake, listener, other}, i = 0; i < 4; i++) {
+        if (fd[i] >= 0) {
+            close(fd[i]);
+        }
+    }
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-plugin-library.01", test_a_declaration_generates_the_manifest},
@@ -839,6 +960,8 @@ int main(void) {
          test_an_activation_connects_to_its_transport_and_is_acknowledged},
         {"yoke-sdk-c:the-plugin-library.16", test_emit_writes_envelopes_and_frames_numbered_from_one},
         {"yoke-sdk-c:the-plugin-library.17", test_a_stop_closes_the_transport_and_emit_is_refused_after_it},
+        {"yoke-sdk-c:the-plugin-library.18", test_the_registration_offers_the_shared_ring},
+        {"yoke-sdk-c:the-plugin-library.19", test_on_the_shared_ring_emit_writes_the_slot_and_wakes},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }

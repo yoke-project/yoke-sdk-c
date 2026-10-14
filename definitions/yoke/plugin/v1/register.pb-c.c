@@ -187,7 +187,7 @@ void   yoke__plugin__v1__heartbeat_terms__free_unpacked
   assert(message->base.descriptor == &yoke__plugin__v1__heartbeat_terms__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor yoke__plugin__v1__register_request__field_descriptors[8] =
+static const ProtobufCFieldDescriptor yoke__plugin__v1__register_request__field_descriptors[9] =
 {
   {
     "plugin",
@@ -285,6 +285,18 @@ static const ProtobufCFieldDescriptor yoke__plugin__v1__register_request__field_
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "transports",
+    9,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_ENUM,
+    offsetof(Yoke__Plugin__V1__RegisterRequest, n_transports),
+    offsetof(Yoke__Plugin__V1__RegisterRequest, transports),
+    &yoke__plugin__v1__control__activate__transport__descriptor,
+    NULL,
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned yoke__plugin__v1__register_request__field_indices_by_name[] = {
   4,   /* field[4] = artifact_version */
@@ -294,12 +306,13 @@ static const unsigned yoke__plugin__v1__register_request__field_indices_by_name[
   3,   /* field[3] = protocol */
   6,   /* field[6] = sdk_line */
   2,   /* field[2] = token */
+  8,   /* field[8] = transports */
   1,   /* field[1] = unit */
 };
 static const ProtobufCIntRange yoke__plugin__v1__register_request__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 8 }
+  { 0, 9 }
 };
 const ProtobufCMessageDescriptor yoke__plugin__v1__register_request__descriptor =
 {
@@ -309,7 +322,7 @@ const ProtobufCMessageDescriptor yoke__plugin__v1__register_request__descriptor 
   "Yoke__Plugin__V1__RegisterRequest",
   "yoke.plugin.v1",
   sizeof(Yoke__Plugin__V1__RegisterRequest),
-  8,
+  9,
   yoke__plugin__v1__register_request__field_descriptors,
   yoke__plugin__v1__register_request__field_indices_by_name,
   1,  yoke__plugin__v1__register_request__number_ranges,
