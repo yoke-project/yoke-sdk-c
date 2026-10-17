@@ -1,7 +1,7 @@
 # The C family: the base and the plugin library, over the committed definitions, with gRPC through its
 # core C API.
 cmake_minimum_required(VERSION 3.25)
-project(yoke-sdk-c VERSION 0.5.0 LANGUAGES C)
+project(yoke-sdk-c VERSION 0.5.1 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
