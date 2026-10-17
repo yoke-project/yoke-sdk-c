@@ -22,7 +22,7 @@
 
 | Field | Value |
 | --- | --- |
-| **Cites** | prj_structure/97 §The definitions, and the four families that are not Go · arch/90-sdks/01 §The five languages, and the party that is not a client |
+| **Cites** | specs/00.28 · prj_structure/97 §The definitions, and the four families that are not Go · arch/90-sdks/01 §The five languages, and the party that is not a client |
 | **Level** | L1 |
 | **Method** | check |
 | **Not applicable in** | — |
