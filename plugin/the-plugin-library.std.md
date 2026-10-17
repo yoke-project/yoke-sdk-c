@@ -48,7 +48,7 @@
 
 | Field | Value |
 | --- | --- |
-| **Cites** | specs/50.6 · specs/90.23 · arch/50-plugin-surface/01 §The order of the first four acts · arch/90-sdks/05 §The observable model may not differ |
+| **Cites** | specs/25.27 · specs/50.6 · specs/90.23 · arch/50-plugin-surface/01 §The order of the first four acts · arch/90-sdks/05 §The observable model may not differ |
 | **Level** | L1 |
 | **Method** | test |
 | **Not applicable in** | — |
