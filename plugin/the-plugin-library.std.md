@@ -230,7 +230,7 @@
 
 | Field | Value |
 | --- | --- |
-| **Cites** | arch/50-plugin-surface/07 §The shared ring · arch/50-plugin-surface/03 §What a registration claims |
+| **Cites** | arch/50-plugin-surface/07 §The shared ring · arch/50-plugin-surface/03 §What the request claims |
 | **Level** | L1 |
 | **Method** | test |
 | **Not applicable in** | — |
