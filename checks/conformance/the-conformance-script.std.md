@@ -16,7 +16,7 @@
 | **Label** | blocking |
 | **Precondition** | a directory holding a stand-in `yoke-conformance` that writes down how it was called and a `yoke-core`; build tools that build nothing; the manifest and the downloads at an address nothing answers |
 | **Action** | run `ci/conformance.sh` with `CONFORMANCE_SUITE` naming the directory |
-| **Expected** | the script succeeds without reaching the manifest; the suite in the directory was run against its harness, given the directory's Core |
+| **Expected** | the script succeeds without reaching the manifest; the suite in the directory was run against each of its harnesses, the plugin library's and the interface library's, given the directory's Core |
 
 ## yoke-sdk-c:the-conformance-script.02 — asked for reports, each harness's run writes one where asked
 
@@ -29,4 +29,4 @@
 | **Label** | blocking |
 | **Precondition** | as `.01`, and an empty directory for the reports |
 | **Action** | run `ci/conformance.sh` with `CONFORMANCE_SUITE` and `CONFORMANCE_REPORTS` |
-| **Expected** | the directory holds one report per harness, named after it: `yoke-c-plugin-harness.json` |
+| **Expected** | the directory holds one report per harness, named after it: `yoke-c-plugin-harness.json` and `yoke-c-interface-harness.json` |

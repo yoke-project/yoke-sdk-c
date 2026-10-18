@@ -22,8 +22,12 @@ published_program() {
   dir="$(mktemp -d)"
   cat > "$dir/main.c" <<'EOF'
 #include <stdio.h>
+#include <yoke/interface.h>
 #include <yoke/plugin.h>
-int main(void) { printf("contract %d\n", yoke_plugin_contract()); return 0; }
+int main(void) {
+  printf("contract %d\ninterface %d\n", yoke_plugin_contract(), yoke_interface_contract());
+  return 0;
+}
 EOF
   echo "$dir"
 }
@@ -34,13 +38,15 @@ check_installing_puts_the_package_under_the_prefix() {
   prefix="$(published_prefix)" || return 1
   lib="$(find "$prefix" -name libyoke-c.a | head -n1)"
   [[ -n "$lib" ]] || { echo "no libyoke-c.a under the prefix"; return 1; }
-  for f in include/yoke/base.h include/yoke/plugin.h; do
+  for f in include/yoke/base.h include/yoke/plugin.h include/yoke/interface.h include/yoke/interface/v1/interface.pb-c.h \
+    include/google/protobuf/timestamp.pb-c.h include/google/protobuf/descriptor.pb-c.h; do
     [[ -f "$prefix/$f" ]] || { echo "no $f under the prefix"; return 1; }
   done
   [[ -n "$(find "$prefix" -name yoke-sdk-c-config.cmake)" ]] || { echo "no package config"; return 1; }
   [[ -n "$(find "$prefix" -name yoke-sdk-c-config-version.cmake)" ]] || { echo "no package version file"; return 1; }
   [[ -n "$(find "$prefix" -name yoke-sdk-c.pc)" ]] || { echo "no pkg-config file"; return 1; }
-  [[ -z "$(find "$prefix" -name '*.pb-c.h')" ]] || { echo "a generated definition header is installed"; return 1; }
+  [[ -z "$(find "$prefix/include/yoke/plugin" -name '*.pb-c.h' 2> /dev/null)" ]] ||
+    { echo "a header of the plugin contract's definitions is installed"; return 1; }
 }
 
 # std: yoke-sdk-c:the-source-release.02

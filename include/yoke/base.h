@@ -26,6 +26,12 @@ typedef struct yoke_subject {
     uint64_t incarnation;
 } yoke_subject;
 
+/* Why a channel's operation was withdrawn: the grade it is suspended in, and the channel that prevails. */
+typedef struct yoke_suspension {
+    char *grade;
+    char *by;
+} yoke_suspension;
+
 /* An error. Every string is owned by the error, and yoke_error_clear releases them. */
 typedef struct yoke_error {
     char *code;    /* the refusal's code, from the one namespace; NULL when it is not a refusal */
@@ -33,6 +39,7 @@ typedef struct yoke_error {
     char *stage;   /* the stage of admission a refusal was made at, where there is one */
     char *item;    /* the item withheld or undeclared, where it names one */
     yoke_subject subject;
+    yoke_suspension suspension; /* where a channel is suspended */
 } yoke_error;
 
 /* Releases what an error holds, and leaves it empty. */
