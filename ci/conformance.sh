@@ -58,6 +58,7 @@ run_suite() {
 }
 
 cmake -S "$root" -B "$root/build" -DCMAKE_BUILD_TYPE=RelWithDebInfo > /dev/null
-cmake --build "$root/build" --target yoke-c-plugin-harness --parallel > /dev/null
+cmake --build "$root/build" --target yoke-c-plugin-harness yoke-c-interface-harness --parallel > /dev/null
 mkdir -p "$results"
 run_suite "$root/build/yoke-c-plugin-harness" | tee "$results/conformance.txt"
+run_suite "$root/build/yoke-c-interface-harness" | tee -a "$results/conformance.txt"

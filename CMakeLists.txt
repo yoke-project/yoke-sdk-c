@@ -17,22 +17,23 @@ find_package(Threads REQUIRED)
 file(GLOB_RECURSE DEFINITIONS CONFIGURE_DEPENDS definitions/*.c)
 set_source_files_properties(${DEFINITIONS} PROPERTIES COMPILE_OPTIONS "-Wall;-Werror")
 
-add_library(yoke-c base/base.c plugin/plugin.c ${DEFINITIONS})
+find_package(OpenSSL REQUIRED)
+add_library(yoke-c base/base.c plugin/plugin.c interface/interface.c interface/tls.c ${DEFINITIONS})
 target_include_directories(yoke-c
     PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/definitions>
            $<INSTALL_INTERFACE:include>
-    PRIVATE base)
-target_link_libraries(yoke-c PUBLIC PkgConfig::GRPC PkgConfig::PROTOBUF_C Threads::Threads)
+    PRIVATE base interface)
+target_link_libraries(yoke-c PUBLIC PkgConfig::GRPC PkgConfig::PROTOBUF_C Threads::Threads PRIVATE OpenSSL::SSL)
 target_compile_definitions(yoke-c PRIVATE _GNU_SOURCE)
-set_source_files_properties(base/base.c plugin/plugin.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
+set_source_files_properties(base/base.c plugin/plugin.c interface/interface.c interface/tls.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 
 # The cases, each program reporting its own in the form the record writer reads.
-add_library(yoke-c-testing STATIC testing/check.c testing/channel.c)
+add_library(yoke-c-testing STATIC testing/check.c testing/channel.c testing/core.c)
 target_include_directories(yoke-c-testing PUBLIC testing)
 target_link_libraries(yoke-c-testing PUBLIC yoke-c)
 target_compile_options(yoke-c-testing PRIVATE -Wall -Wextra -Werror)
 
-foreach(program base/base_test plugin/plugin_test)
+foreach(program base/base_test plugin/plugin_test interface/interface_test)
     get_filename_component(name ${program} NAME)
     add_executable(${name} ${program}.c)
     target_include_directories(${name} PRIVATE base)
@@ -40,6 +41,13 @@ foreach(program base/base_test plugin/plugin_test)
     target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(${name} PRIVATE yoke-c-testing)
 endforeach()
+
+# The routable cases stand a TLS Core up with OpenSSL, and carry its bytes with the library's own pump.
+add_executable(routable_test interface/routable_test.c)
+target_include_directories(routable_test PRIVATE base interface)
+target_compile_definitions(routable_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}" _GNU_SOURCE)
+target_compile_options(routable_test PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(routable_test PRIVATE yoke-c-testing OpenSSL::SSL)
 
 # The harness the conformance suite drives, and its cases. It speaks to the suite in JSON, through
 # json-c, and to the Core only through the library under test.
@@ -56,13 +64,29 @@ target_compile_definitions(harness_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 target_compile_options(harness_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(harness_test PRIVATE yoke-c-harness yoke-c-testing)
 
+# The interface library's harness, and its cases.
+add_library(yoke-c-iharness STATIC interface-harness/interface_harness.c)
+target_include_directories(yoke-c-iharness PUBLIC interface-harness)
+target_compile_options(yoke-c-iharness PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(yoke-c-iharness PRIVATE _GNU_SOURCE)
+target_link_libraries(yoke-c-iharness PUBLIC yoke-c PkgConfig::JSONC Threads::Threads)
+add_executable(yoke-c-interface-harness interface-harness/main.c)
+target_link_libraries(yoke-c-interface-harness PRIVATE yoke-c-iharness)
+add_executable(interface_harness_test interface-harness/interface_harness_test.c)
+target_compile_definitions(interface_harness_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}" _GNU_SOURCE)
+target_compile_options(interface_harness_test PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(interface_harness_test PRIVATE yoke-c-iharness yoke-c-testing)
+
 # What a consumer installs: the library, its public headers, a CMake package config `find_package` resolves,
-# and a pkg-config file for every build that is not CMake. The definitions are the library's own and are
-# not installed: no public header includes them.
+# and a pkg-config file for every build that is not CMake. The plugin contract's definitions are the
+# library's own and are not installed: no public header includes them. The interface contract's are, with
+# the well-known types they import, because the interface library surfaces its messages.
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 install(TARGETS yoke-c EXPORT yoke-sdk-c-targets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/yoke DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY definitions/yoke/interface DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/yoke FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY definitions/google DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
 install(EXPORT yoke-sdk-c-targets NAMESPACE yoke:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yoke-sdk-c)
 configure_package_config_file(cmake/yoke-sdk-c-config.cmake.in ${CMAKE_BINARY_DIR}/yoke-sdk-c-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yoke-sdk-c)

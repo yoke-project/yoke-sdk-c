@@ -8,7 +8,7 @@ build:
     set -euo pipefail
     cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo > /dev/null
     cmake --build build --parallel
-    echo "build: the definitions, the base and the plugin library compile"
+    echo "build: the definitions, the base, the plugin and the interface libraries compile"
 
 # Run this repository's own checks, with no sibling present.
 test:
@@ -29,7 +29,7 @@ test:
     (
       failed=0
       bash checks/run.sh || failed=1
-      for program in base_test plugin_test harness_test; do
+      for program in base_test plugin_test harness_test interface_test routable_test interface_harness_test; do
         if [[ -x "build/$program" ]]; then
           "build/$program" || failed=1
         else

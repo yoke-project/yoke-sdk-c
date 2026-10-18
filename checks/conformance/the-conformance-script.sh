@@ -4,7 +4,7 @@
 # and the suite are stand-ins on PATH, so what is checked is the script and not the build.
 
 conformance_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-conformance_harnesses=(yoke-c-plugin-harness)
+conformance_harnesses=(yoke-c-plugin-harness yoke-c-interface-harness)
 
 # conformance_stand_ins <dir>: a suite that writes down how it was called and writes any report it is
 # asked for, a Core that is never run, and build tools that build nothing.

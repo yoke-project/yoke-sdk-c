@@ -29,6 +29,8 @@ void yoke_error_clear(yoke_error *err) {
     free(err->item);
     free(err->subject.kind);
     free(err->subject.identity);
+    free(err->suspension.grade);
+    free(err->suspension.by);
     memset(err, 0, sizeof *err);
 }
 
