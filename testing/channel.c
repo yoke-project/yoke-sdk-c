@@ -11,6 +11,10 @@
 #include <grpc/byte_buffer_reader.h>
 #include <grpc/grpc.h>
 #include <grpc/grpc_security.h>
+/* Newer gRPC declares the credentials here, and grpc_security.h no longer includes it. */
+#if __has_include(<grpc/credentials.h>)
+#include <grpc/credentials.h>
+#endif
 #include <grpc/support/alloc.h>
 
 #include "check.h"
