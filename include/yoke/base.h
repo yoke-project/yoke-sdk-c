@@ -17,7 +17,7 @@ extern "C" {
 #endif
 
 /* What this project's libraries say they are: at admission, and in a harness's hello. */
-#define YOKE_SDK_LINE "yoke-sdk-c 0.6.0"
+#define YOKE_SDK_LINE "yoke-sdk-c 0.6.1"
 
 /* What a refusal names: a kind, an identity, and a unit's life where one is named. */
 typedef struct yoke_subject {
