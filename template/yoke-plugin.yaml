@@ -1,0 +1,9 @@
+plugin: 1
+id: @YOKE_ID@
+language: c
+program: @YOKE_PROGRAM@
+manifest: plugin/@YOKE_ID@.yaml
+build:
+  in: plugin/
+  run: '{ [ "$YOKE_ARCH" = "$(uname -m)" ] || [ -n "$CMAKE_TOOLCHAIN_FILE" ]; } || { echo "building for $YOKE_ARCH on $(uname -m) needs CMAKE_TOOLCHAIN_FILE"; exit 1; }; cmake -S . -B "$YOKE_OUT/.build" -DCMAKE_BUILD_TYPE=Release && cmake --build "$YOKE_OUT/.build" --target @YOKE_PROGRAM@ -j && cp "$YOKE_OUT/.build/@YOKE_PROGRAM@" "$YOKE_OUT/@YOKE_PROGRAM@"'
+architectures: [x86_64, aarch64]

@@ -19,8 +19,10 @@ set_source_files_properties(${DEFINITIONS} PROPERTIES COMPILE_OPTIONS "-Wall;-We
 
 find_package(OpenSSL REQUIRED)
 add_library(yoke-c base/base.c plugin/plugin.c interface/interface.c interface/tls.c ${DEFINITIONS})
+# The library is reached as the project it is, and also from the project that fetches it: its own
+# directories are PROJECT_SOURCE_DIR and PROJECT_BINARY_DIR, never the top level's.
 target_include_directories(yoke-c
-    PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include> $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/definitions>
+    PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/definitions>
            $<INSTALL_INTERFACE:include>
     PRIVATE base interface)
 target_link_libraries(yoke-c PUBLIC PkgConfig::GRPC PkgConfig::PROTOBUF_C Threads::Threads PRIVATE OpenSSL::SSL)
@@ -37,7 +39,7 @@ foreach(program base/base_test plugin/plugin_test interface/interface_test)
     get_filename_component(name ${program} NAME)
     add_executable(${name} ${program}.c)
     target_include_directories(${name} PRIVATE base)
-    target_compile_definitions(${name} PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(${name} PRIVATE SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(${name} PRIVATE yoke-c-testing)
 endforeach()
@@ -45,7 +47,7 @@ endforeach()
 # The routable cases stand a TLS Core up with OpenSSL, and carry its bytes with the library's own pump.
 add_executable(routable_test interface/routable_test.c)
 target_include_directories(routable_test PRIVATE base interface)
-target_compile_definitions(routable_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}" _GNU_SOURCE)
+target_compile_definitions(routable_test PRIVATE SOURCE_DIR="${PROJECT_SOURCE_DIR}" _GNU_SOURCE)
 target_compile_options(routable_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(routable_test PRIVATE yoke-c-testing OpenSSL::SSL)
 
@@ -60,7 +62,7 @@ target_link_libraries(yoke-c-harness PUBLIC yoke-c PkgConfig::JSONC Threads::Thr
 add_executable(yoke-c-plugin-harness harness/main.c)
 target_link_libraries(yoke-c-plugin-harness PRIVATE yoke-c-harness)
 add_executable(harness_test harness/harness_test.c)
-target_compile_definitions(harness_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}" _GNU_SOURCE)
+target_compile_definitions(harness_test PRIVATE SOURCE_DIR="${PROJECT_SOURCE_DIR}" _GNU_SOURCE)
 target_compile_options(harness_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(harness_test PRIVATE yoke-c-harness yoke-c-testing)
 
@@ -73,7 +75,7 @@ target_link_libraries(yoke-c-iharness PUBLIC yoke-c PkgConfig::JSONC Threads::Th
 add_executable(yoke-c-interface-harness interface-harness/main.c)
 target_link_libraries(yoke-c-interface-harness PRIVATE yoke-c-iharness)
 add_executable(interface_harness_test interface-harness/interface_harness_test.c)
-target_compile_definitions(interface_harness_test PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}" _GNU_SOURCE)
+target_compile_definitions(interface_harness_test PRIVATE SOURCE_DIR="${PROJECT_SOURCE_DIR}" _GNU_SOURCE)
 target_compile_options(interface_harness_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(interface_harness_test PRIVATE yoke-c-iharness yoke-c-testing)
 
@@ -88,12 +90,12 @@ install(DIRECTORY include/yoke DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY definitions/yoke/interface DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/yoke FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY definitions/google DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
 install(EXPORT yoke-sdk-c-targets NAMESPACE yoke:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yoke-sdk-c)
-configure_package_config_file(cmake/yoke-sdk-c-config.cmake.in ${CMAKE_BINARY_DIR}/yoke-sdk-c-config.cmake
+configure_package_config_file(cmake/yoke-sdk-c-config.cmake.in ${PROJECT_BINARY_DIR}/yoke-sdk-c-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yoke-sdk-c)
-write_basic_package_version_file(${CMAKE_BINARY_DIR}/yoke-sdk-c-config-version.cmake COMPATIBILITY SameMinorVersion)
-install(FILES ${CMAKE_BINARY_DIR}/yoke-sdk-c-config.cmake ${CMAKE_BINARY_DIR}/yoke-sdk-c-config-version.cmake
+write_basic_package_version_file(${PROJECT_BINARY_DIR}/yoke-sdk-c-config-version.cmake COMPATIBILITY SameMinorVersion)
+install(FILES ${PROJECT_BINARY_DIR}/yoke-sdk-c-config.cmake ${PROJECT_BINARY_DIR}/yoke-sdk-c-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yoke-sdk-c)
 # The pkg-config file finds the prefix from where it was installed, so a prefix given at install holds.
 file(RELATIVE_PATH PC_TO_PREFIX "/prefix/${CMAKE_INSTALL_LIBDIR}/pkgconfig" "/prefix")
-configure_file(cmake/yoke-sdk-c.pc.in ${CMAKE_BINARY_DIR}/yoke-sdk-c.pc @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/yoke-sdk-c.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+configure_file(cmake/yoke-sdk-c.pc.in ${PROJECT_BINARY_DIR}/yoke-sdk-c.pc @ONLY)
+install(FILES ${PROJECT_BINARY_DIR}/yoke-sdk-c.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)

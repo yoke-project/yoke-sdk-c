@@ -27,6 +27,7 @@ manager is involved.
 | `definitions/` | The generated C of the plugin and interface contracts, and `record`, which pins the definitions' version, digest and generators |
 | `testing/` | What the programs that run the cases share |
 | `cmake/` | The package config and the pkg-config file `cmake --install` writes |
+| `template/` | The starting tree of a Plugin project in C, handed over with each release for `yoke-compose new plugin` |
 | `checks/`, `ci/` | This repository's own checks, and the scripts continuous integration runs; `ci/definitions.sh` regenerates `definitions/` |
 
 A test's description sits beside the test, as a `.std.md` file.
