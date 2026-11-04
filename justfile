@@ -90,4 +90,5 @@ release:
     # since the proxy may still hold an older answer for a branch, with git's automatic collection off,
     # which would otherwise rewrite the shallow clone under go's second fetch.
     version="$(cd "$(mktemp -d)" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0 GOPROXY=direct go list -m -f '{{{{.Version}}' github.com/yoke-project/yoke@main)"
-    go run "github.com/yoke-project/yoke/cmd/yoke-release@$version" -source yoke-sdk-c
+    # The source, and with it the family's Plugin template: the archive of template/, to the tag's release.
+    go run "github.com/yoke-project/yoke/cmd/yoke-release@$version" -source yoke-sdk-c -template c

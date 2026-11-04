@@ -1,0 +1,20 @@
+# The Manifest kept in plugin/ is what the program prints: built natively and asked, at every change.
+name: manifest
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  manifest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: the library's build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake pkg-config libprotobuf-c-dev libgrpc-dev libjson-c-dev libssl-dev
+      - name: the Manifest kept is the Manifest printed
+        working-directory: plugin
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/build" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/build" --target @YOKE_PROGRAM@ -j
+          "$RUNNER_TEMP/build/@YOKE_PROGRAM@" --manifest | diff -u @YOKE_ID@.yaml -
