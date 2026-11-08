@@ -4,15 +4,25 @@
 #
 # The tool is the one `develop` put on PATH, and the record names it by the build information the
 # binary carries: the version it states, and nothing learnt from where it was installed.
-# Usage: record.sh [results directory]
+# A level whose predecessor blocked was not reached: PREDECESSOR names that record.
+# Usage: [PREDECESSOR=<record>] record.sh [level] [results directory] — the level is L1 unless named.
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+level=L1
+[[ "${1:-}" =~ ^L[0-9]$ ]] && { level="$1"; shift; }
 results="${1:-$root/.results}"
 
 for each in checks.txt started finished; do
   [[ -f "$results/$each" ]] || { echo "record: the run left no $each in $results" >&2; exit 1; }
 done
+
+more=()
+if [[ -n "${PREDECESSOR:-}" ]]; then
+  blocked="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("blocks") is not False)' "$PREDECESSOR" 2>/dev/null)"
+  # A predecessor whose record cannot be read did not pass either.
+  [[ "$blocked" == False ]] || more+=(--not-reached)
+fi
 
 # The architecture as the environment's dimension names it.
 case "$(uname -m)" in
@@ -26,7 +36,7 @@ version="$(grep -aoE $'mod\tgithub\\.com/yoke-project/yoke\t[^\t]+' "$tool" | he
 revision="$(grep -aoE 'vcs\.revision=[0-9a-f]{40}' "$tool" | head -n 1 | cut -d= -f2)"
 
 yoke-verify record \
-  --level L1 \
+  --level "$level" \
   --tier reference \
   --repository yoke-sdk-c \
   --environment "architecture=$architecture" \
@@ -34,4 +44,5 @@ yoke-verify record \
   --finished "$(tr -d '[:space:]' < "$results/finished")" \
   --ran "yoke-verify=${version:-unknown}@${revision:0:12}" \
   --results "$results/checks.txt" \
+  ${more[@]+"${more[@]}"} \
   "$root"
