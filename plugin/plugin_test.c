@@ -598,7 +598,8 @@ done:
 static int listen_at(const char *path, int type) {
     struct sockaddr_un addr = {.sun_family = AF_UNIX};
     size_t len = strlen(path);
-    if (len >= sizeof addr.sun_path) return -1;
+    if (len >= sizeof addr.sun_path)
+        return -1;
     memcpy(addr.sun_path, path, len + 1);
     int fd = socket(AF_UNIX, type, 0);
     if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0) {
