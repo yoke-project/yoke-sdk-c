@@ -596,9 +596,11 @@ done:
 
 /* Listens at path for a socket of the type given; the descriptor. */
 static int listen_at(const char *path, int type) {
-    int fd = socket(AF_UNIX, type, 0);
     struct sockaddr_un addr = {.sun_family = AF_UNIX};
-    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path);
+    size_t len = strlen(path);
+    if (len >= sizeof addr.sun_path) return -1;
+    memcpy(addr.sun_path, path, len + 1);
+    int fd = socket(AF_UNIX, type, 0);
     if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0) {
         close(fd);
         return -1;

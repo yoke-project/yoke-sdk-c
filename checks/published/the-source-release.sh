@@ -104,3 +104,16 @@ check_a_release_tag_hands_the_source_over() {
   grep -q "tags: \['v\*'\]" "$workflow" || { echo "the release workflow does not run on a v tag"; return 1; }
   grep -q 'just release > manifest-lines.jsonl' "$workflow" || { echo "the release workflow does not keep the lines"; return 1; }
 }
+
+# std: yoke-sdk-c:the-source-release.06
+check_the_library_alone_builds_with_nothing_the_cases_need() {
+  local dir targets
+  dir="$(mktemp -d)"
+  cmake -S "$root" -B "$dir" -DCMAKE_BUILD_TYPE=Release -DYOKE_SDK_C_TESTING=OFF > "$dir/configure.log" 2>&1 \
+    || { echo "the library alone does not configure: $(grep -m2 -i error "$dir/configure.log")"; rm -rf "$dir"; return 1; }
+  targets="$(cmake --build "$dir" --target help 2> /dev/null)"
+  if grep -qE 'harness|_test' <<<"$targets"; then echo "the library alone still declares harnesses or cases"; rm -rf "$dir"; return 1; fi
+  cmake --build "$dir" --parallel > "$dir/build.log" 2>&1 \
+    || { echo "the library alone does not build: $(grep -m1 'error:' "$dir/build.log")"; rm -rf "$dir"; return 1; }
+  rm -rf "$dir"
+}

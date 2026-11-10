@@ -29,6 +29,11 @@ target_link_libraries(yoke-c PUBLIC PkgConfig::GRPC PkgConfig::PROTOBUF_C Thread
 target_compile_definitions(yoke-c PRIVATE _GNU_SOURCE)
 set_source_files_properties(base/base.c plugin/plugin.c interface/interface.c interface/tls.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 
+# The cases and the harnesses are this repository's own; a consumer of the source release builds the
+# library alone, with the option off, and needs nothing they use.
+option(YOKE_SDK_C_TESTING "build the harnesses and the case programs" ON)
+if(YOKE_SDK_C_TESTING)
+
 # The cases, each program reporting its own in the form the record writer reads.
 add_library(yoke-c-testing STATIC testing/check.c testing/channel.c testing/core.c)
 target_include_directories(yoke-c-testing PUBLIC testing)
@@ -78,6 +83,8 @@ add_executable(interface_harness_test interface-harness/interface_harness_test.c
 target_compile_definitions(interface_harness_test PRIVATE SOURCE_DIR="${PROJECT_SOURCE_DIR}" _GNU_SOURCE)
 target_compile_options(interface_harness_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(interface_harness_test PRIVATE yoke-c-iharness yoke-c-testing)
+
+endif()
 
 # What a consumer installs: the library, its public headers, a CMake package config `find_package` resolves,
 # and a pkg-config file for every build that is not CMake. The plugin contract's definitions are the

@@ -69,3 +69,16 @@
 | **Precondition** | a clean checkout |
 | **Action** | read the `release` verb and the release workflow |
 | **Expected** | the verb runs the published release verb with `-source yoke-sdk-c`, and the workflow runs it on a `v` tag and keeps the lines it prints |
+
+## yoke-sdk-c:the-source-release.06 — the library alone builds from the source release, with nothing the cases need
+
+| Field | Value |
+| --- | --- |
+| **Cites** | prj_structure/40 E1 · prj_structure/97 §What C and C++ are consumed as |
+| **Level** | L1 |
+| **Method** | check |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | this tree, configured in `Release` with `YOKE_SDK_C_TESTING` off |
+| **Action** | configure it, list its targets, and build all of them |
+| **Expected** | the configure succeeds and declares no harness and no case program; every target builds — a consumer of the source release, following the guide's steps, builds only what the library is. In this repository's own build the option is on, and the harnesses and the cases are built as before |
