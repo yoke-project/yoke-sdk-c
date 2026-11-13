@@ -247,7 +247,8 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
         json_object_object_add(result, "value", value);
         return;
     }
-    static const char *const acts[] = {"close", "emit", "report-health", "report", "ack", "answer", NULL};
+    static const char *const acts[] = {"close", "emit",   "report-health", "report",
+                                       "ack",   "answer", "fail",          NULL};
     bool known = false;
     for (size_t i = 0; acts[i]; i++) {
         known = known || strcmp(verb, acts[i]) == 0;
@@ -285,6 +286,9 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
         yoke_event none = {.kind = YOKE_COMMAND, .id = (char *)""};
         const yoke_event *c = held(h, YOKE_COMMAND, arg(args, "command"));
         rc = yoke_ack(h->unit, c ? c : &none, YOKE_DONE, arg(args, "line"), &err);
+    } else if (strcmp(verb, "fail") == 0) {
+        /* A question or a command the Core sent, failed with a code and a message, correlated to it. */
+        rc = yoke_fail(h->unit, arg(args, "about"), arg(args, "code"), arg(args, "message"), &err);
     } else {
         const char *payload = arg(args, "payload");
         yoke_event none = {.kind = YOKE_QUESTION, .id = (char *)""};
