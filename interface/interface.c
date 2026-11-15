@@ -7,11 +7,15 @@
 #include "yoke/interface.h"
 
 #include <errno.h>
+#include <poll.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -113,6 +117,14 @@ struct yoke_delivery {
     bool flowing;
     int fd;   /* a per-subscriber socket the Core listens on; -1 on the connection */
     callq *q; /* the connection's frames */
+    const char *arrives;
+    bool lengthed; /* fd is a stream socket: each frame after its length */
+    /* On the shared ring: fd is the lifeline, and the ring of the activation being read is mapped here. */
+    bool shared;
+    unsigned char *ring;
+    size_t ring_size;
+    uint32_t slots, capacity;
+    uint64_t next;
 };
 
 int yoke_interface_contract(void) { return YOKE__INTERFACE__V1__CONTRACT__CONTRACT_VERSION; }
@@ -1030,12 +1042,19 @@ int yoke_ask(yoke_attachment *a, const char *unit, const char *type, const void 
     return call(a, &r, YOKE__INTERFACE__V1__RESPONSE__ANSWER_QUERY, answer, err);
 }
 
-static int unit_stream(yoke_attachment *a, Yoke__Interface__V1__Request__OperationCase operation,
-                       Yoke__Interface__V1__Response__AnswerCase want, const char *unit, const char *stream,
-                       Yoke__Interface__V1__Response **answer, yoke_error *err) {
+static int unit_stream_reading(yoke_attachment *a, Yoke__Interface__V1__Request__OperationCase operation,
+                               Yoke__Interface__V1__Response__AnswerCase want, const char *unit,
+                               const char *stream, const yoke_reads *reads, size_t n_reads,
+                               Yoke__Interface__V1__Response **answer, yoke_error *err) {
     Yoke__Interface__V1__UnitStream us = YOKE__INTERFACE__V1__UNIT_STREAM__INIT;
     us.unit = (char *)unit;
     us.stream = (char *)stream;
+    Yoke__Interface__V1__UnitStream__Reads named[2];
+    us.n_reads = n_reads > 2 ? 2 : n_reads;
+    for (size_t i = 0; i < us.n_reads; i++) {
+        named[i] = (Yoke__Interface__V1__UnitStream__Reads)reads[i];
+    }
+    us.reads = named;
     Yoke__Interface__V1__Request r = YOKE__INTERFACE__V1__REQUEST__INIT;
     r.operation_case = operation;
     switch (operation) {
@@ -1050,6 +1069,12 @@ static int unit_stream(yoke_attachment *a, Yoke__Interface__V1__Request__Operati
         break;
     }
     return call(a, &r, want, answer, err);
+}
+
+static int unit_stream(yoke_attachment *a, Yoke__Interface__V1__Request__OperationCase operation,
+                       Yoke__Interface__V1__Response__AnswerCase want, const char *unit, const char *stream,
+                       Yoke__Interface__V1__Response **answer, yoke_error *err) {
+    return unit_stream_reading(a, operation, want, unit, stream, NULL, 0, answer, err);
 }
 
 int yoke_start_stream(yoke_attachment *a, const char *unit, const char *stream,
@@ -1215,10 +1240,38 @@ void yoke_frame_clear(yoke_frame *frame) {
 
 yoke_delivery *yoke_subscribe_stream(yoke_attachment *a, const char *unit, const char *stream,
                                      yoke_error *err) {
+    static const yoke_reads both[] = {YOKE_READS_STREAM_SOCKET, YOKE_READS_SHARED_OBJECT};
+    return yoke_subscribe_stream_reading(a, unit, stream, both, 2, err);
+}
+
+const char *yoke_delivery_arrives(const yoke_delivery *d) { return d->arrives; }
+
+/* Connects to a socket a delivery names, of the type given; -1 with the reason. */
+static int reach(const char *path, int type, yoke_error *err) {
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    if (strlen(path) >= sizeof addr.sun_path) {
+        yoke_error_say(err, "the delivery's socket %s cannot be reached: the path is too long", path);
+        return -1;
+    }
+    strcpy(addr.sun_path, path);
+    int fd = socket(AF_UNIX, type | SOCK_CLOEXEC, 0);
+    if (fd < 0 || connect(fd, (struct sockaddr *)&addr, sizeof addr) != 0) {
+        yoke_error_say(err, "the delivery's socket %s cannot be reached: %s", path, strerror(errno));
+        if (fd >= 0) {
+            close(fd);
+        }
+        return -1;
+    }
+    return fd;
+}
+
+yoke_delivery *yoke_subscribe_stream_reading(yoke_attachment *a, const char *unit, const char *stream,
+                                             const yoke_reads *reads, size_t n_reads, yoke_error *err) {
     Yoke__Interface__V1__Response *answer = NULL;
-    if (unit_stream(a, YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_SUBSCRIBE,
-                    YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_SUBSCRIBE, unit, stream, &answer,
-                    err) != 0) {
+    if (unit_stream_reading(a, YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_SUBSCRIBE,
+                            YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_SUBSCRIBE, unit, stream, reads,
+                            n_reads, &answer, err) != 0) {
         return NULL;
     }
     Yoke__Interface__V1__Delivering *d = answer->stream_subscribe;
@@ -1227,7 +1280,24 @@ yoke_delivery *yoke_subscribe_stream(yoke_attachment *a, const char *unit, const
     out->id = strdup(d->delivery);
     out->flowing = d->flowing;
     out->fd = -1;
+    out->arrives = "socket";
     switch (d->arrives_case) {
+    case YOKE__INTERFACE__V1__DELIVERING__ARRIVES_STREAM_SOCKET:
+        out->fd = reach(d->stream_socket, SOCK_STREAM, err);
+        if (out->fd < 0) {
+            goto fail;
+        }
+        out->lengthed = true;
+        out->arrives = "stream_socket";
+        break;
+    case YOKE__INTERFACE__V1__DELIVERING__ARRIVES_SHARED:
+        out->fd = reach(d->shared, SOCK_STREAM, err);
+        if (out->fd < 0) {
+            goto fail;
+        }
+        out->shared = true;
+        out->arrives = "shared";
+        break;
     case YOKE__INTERFACE__V1__DELIVERING__ARRIVES_SOCKET: {
         struct sockaddr_un addr = {0};
         addr.sun_family = AF_UNIX;
@@ -1250,6 +1320,7 @@ yoke_delivery *yoke_subscribe_stream(yoke_attachment *a, const char *unit, const
         break;
     }
     case YOKE__INTERFACE__V1__DELIVERING__ARRIVES_CONNECTION:
+        out->arrives = "connection";
         pthread_mutex_lock(&a->mu);
         out->q = register_call(a, out->id);
         pthread_mutex_unlock(&a->mu);
@@ -1271,8 +1342,218 @@ const char *yoke_delivery_id(const yoke_delivery *d) { return d->id; }
 
 int yoke_delivery_flowing(const yoke_delivery *d) { return d->flowing ? 1 : 0; }
 
+/* Milliseconds left until a deadline; -1 for none. */
+static int left_of(int timeout_ms, const struct timespec *by) {
+    if (timeout_ms < 0) {
+        return -1;
+    }
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    long long left = ((long long)by->tv_sec - now.tv_sec) * 1000 + (by->tv_nsec - now.tv_nsec) / 1000000;
+    return left < 0 ? 0 : (int)left;
+}
+
+/* Reads exactly n bytes from a stream socket, waiting at most wait_ms for the first; 1, 0 at its end,
+   -1 on the timeout. */
+static int read_exactly(int fd, unsigned char *buf, size_t n, int wait_ms) {
+    size_t got = 0;
+    while (got < n) {
+        struct pollfd p = {.fd = fd, .events = POLLIN};
+        int ready = poll(&p, 1, got == 0 ? wait_ms : 5000);
+        if (ready < 0 && errno == EINTR) {
+            continue;
+        }
+        if (ready == 0) {
+            return got == 0 ? -1 : 0;
+        }
+        ssize_t r = recv(fd, buf + got, n - got, 0);
+        if (r < 0 && errno == EINTR) {
+            continue;
+        }
+        if (r <= 0) {
+            return 0;
+        }
+        got += (size_t)r;
+    }
+    return 1;
+}
+
+static void unmap_ring(yoke_delivery *d) {
+    if (d->ring != NULL) {
+        munmap(d->ring, d->ring_size);
+        d->ring = NULL;
+    }
+}
+
+/* Maps a ring the lifeline handed, for reading alone; 0, or -1 with the reason. */
+static int map_ring(yoke_delivery *d, int fd, yoke_error *err) {
+    struct stat st;
+    if (fstat(fd, &st) != 0 || st.st_size < 64) {
+        yoke_error_say(err, "the ring handed cannot be read");
+        return -1;
+    }
+    unsigned char *mem = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (mem == MAP_FAILED) {
+        yoke_error_say(err, "the ring handed cannot be mapped: %s", strerror(errno));
+        return -1;
+    }
+    uint32_t version, slots, capacity;
+    memcpy(&version, mem + 8, 4);
+    memcpy(&slots, mem + 12, 4);
+    memcpy(&capacity, mem + 16, 4);
+    if (memcmp(mem, "YOKERING", 8) != 0 || version != 1 || slots == 0 ||
+        64 + (uint64_t)slots * (32 + (uint64_t)capacity) > (uint64_t)st.st_size) {
+        munmap(mem, (size_t)st.st_size);
+        yoke_error_say(err, "the memory handed is not a ring this library reads");
+        return -1;
+    }
+    unmap_ring(d);
+    d->ring = mem;
+    d->ring_size = (size_t)st.st_size;
+    d->slots = slots;
+    d->capacity = capacity;
+    d->next = 1;
+    return 0;
+}
+
+/* Reads one frame from the mapped ring if one is published; 1 if read, 0 if none. A lap by the producer,
+   or a slot overwritten while it was copied, is a gap the sequence shows. */
+static int read_ring(yoke_delivery *d, yoke_frame *frame) {
+    for (;;) {
+        uint64_t published = __atomic_load_n((uint64_t *)(d->ring + 24), __ATOMIC_ACQUIRE);
+        if (published < d->next) {
+            return 0;
+        }
+        if (published >= d->slots && d->next < published - d->slots + 1) {
+            d->next = published - d->slots + 1;
+        }
+        uint64_t n = d->next++;
+        unsigned char *slot = d->ring + 64 + ((n - 1) % d->slots) * (32 + (size_t)d->capacity);
+        uint64_t before = __atomic_load_n((uint64_t *)slot, __ATOMIC_ACQUIRE);
+        uint64_t clock;
+        uint32_t length;
+        memcpy(&clock, slot + 8, 8);
+        memcpy(&length, slot + 16, 4);
+        if (length > d->capacity) {
+            length = d->capacity;
+        }
+        unsigned char *payload = malloc(length + 1);
+        memcpy(payload, slot + 32, length);
+        uint64_t after = __atomic_load_n((uint64_t *)slot, __ATOMIC_ACQUIRE);
+        if (before != n || after != n) {
+            free(payload);
+            continue;
+        }
+        frame->sequence = n;
+        frame->sent_at = clock;
+        frame->payload = payload;
+        frame->payload_len = length;
+        return 1;
+    }
+}
+
+/* The next frame of a delivery on the shared ring: the lifeline's messages taken as they come — a ring on
+   one byte, a stop of length zero, the end at its closing — and the ring read, at a bounded interval. */
+static int next_on_the_ring(yoke_delivery *d, yoke_frame *frame, int timeout_ms, yoke_error *err) {
+    struct timespec by;
+    if (timeout_ms >= 0) {
+        deadline_in(timeout_ms, &by);
+    }
+    for (;;) {
+        struct pollfd p = {.fd = d->fd, .events = POLLIN};
+        if (poll(&p, 1, 0) > 0) {
+            unsigned char head[4];
+            char space[CMSG_SPACE(sizeof(int))];
+            struct iovec io = {.iov_base = head, .iov_len = 4};
+            struct msghdr m = {
+                .msg_iov = &io, .msg_iovlen = 1, .msg_control = space, .msg_controllen = sizeof space};
+            ssize_t r = recvmsg(d->fd, &m, MSG_WAITALL);
+            if (r <= 0) {
+                unmap_ring(d);
+                return YOKE_WAIT_COMPLETE;
+            }
+            int handed = -1;
+            for (struct cmsghdr *c = CMSG_FIRSTHDR(&m); c; c = CMSG_NXTHDR(&m, c)) {
+                if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+                    memcpy(&handed, CMSG_DATA(c), sizeof(int));
+                }
+            }
+            uint32_t length = (uint32_t)head[0] | (uint32_t)head[1] << 8 | (uint32_t)head[2] << 16 |
+                              (uint32_t)head[3] << 24;
+            if (length == 0) {
+                unmap_ring(d);
+            } else {
+                unsigned char body[16];
+                struct iovec bio = {.iov_base = body, .iov_len = length < sizeof body ? length : sizeof body};
+                struct msghdr bm = {
+                    .msg_iov = &bio, .msg_iovlen = 1, .msg_control = space, .msg_controllen = sizeof space};
+                if (recvmsg(d->fd, &bm, MSG_WAITALL) <= 0) {
+                    unmap_ring(d);
+                    return YOKE_WAIT_COMPLETE;
+                }
+                for (struct cmsghdr *c = CMSG_FIRSTHDR(&bm); handed < 0 && c; c = CMSG_NXTHDR(&bm, c)) {
+                    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+                        memcpy(&handed, CMSG_DATA(c), sizeof(int));
+                    }
+                }
+                if (handed >= 0) {
+                    int mapped = map_ring(d, handed, err);
+                    close(handed);
+                    if (mapped != 0) {
+                        return YOKE_WAIT_FAILED;
+                    }
+                }
+            }
+            continue;
+        }
+        if (d->ring != NULL && read_ring(d, frame)) {
+            return YOKE_WAIT_GOT;
+        }
+        int left = left_of(timeout_ms, &by);
+        if (left == 0) {
+            return YOKE_WAIT_TIMEOUT;
+        }
+        struct pollfd w = {.fd = d->fd, .events = POLLIN};
+        poll(&w, 1, d->ring != NULL ? 2 : (left < 0 ? 100 : (left < 100 ? left : 100)));
+    }
+}
+
 int yoke_delivery_next(yoke_delivery *d, yoke_frame *frame, int timeout_ms, yoke_error *err) {
     memset(frame, 0, sizeof *frame);
+    if (d->shared) {
+        return next_on_the_ring(d, frame, timeout_ms, err);
+    }
+    if (d->fd >= 0 && d->lengthed) {
+        unsigned char head[4];
+        int got = read_exactly(d->fd, head, 4, timeout_ms);
+        if (got < 0) {
+            return YOKE_WAIT_TIMEOUT;
+        }
+        if (got == 0) {
+            return YOKE_WAIT_COMPLETE;
+        }
+        uint32_t length =
+            (uint32_t)head[0] | (uint32_t)head[1] << 8 | (uint32_t)head[2] << 16 | (uint32_t)head[3] << 24;
+        unsigned char *body = malloc(length ? length : 1);
+        if (read_exactly(d->fd, body, length, 5000) != 1) {
+            free(body);
+            return YOKE_WAIT_COMPLETE;
+        }
+        if (length < HEADER) {
+            free(body);
+            yoke_error_say(err, "a frame of %u bytes is shorter than its header", length);
+            return YOKE_WAIT_FAILED;
+        }
+        for (int i = 0; i < 8; i++) {
+            frame->sequence |= (uint64_t)body[i] << (8 * i);
+            frame->sent_at |= (uint64_t)body[8 + i] << (8 * i);
+        }
+        frame->payload_len = length - HEADER;
+        frame->payload = malloc(frame->payload_len + 1);
+        memcpy(frame->payload, body + HEADER, frame->payload_len);
+        free(body);
+        return YOKE_WAIT_GOT;
+    }
     if (d->fd >= 0) {
         struct timespec by;
         if (timeout_ms >= 0) {
@@ -1369,6 +1650,7 @@ int yoke_delivery_release(yoke_delivery *d, yoke_error *err) {
     int result = call(a, &r, YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_UNSUBSCRIBE, NULL, err);
     if (d->fd >= 0) {
         close(d->fd);
+        unmap_ring(d);
     }
     if (d->q != NULL) {
         pthread_mutex_lock(&a->mu);

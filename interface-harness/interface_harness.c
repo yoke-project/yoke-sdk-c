@@ -536,13 +536,31 @@ static void act(harness *h, const char *verb, json_object *args, json_object *re
             flag(value, "changed", answer->reclaim->changed);
         }
     } else {
-        yoke_delivery *d = yoke_subscribe_stream(a, arg(args, "unit"), arg(args, "stream"), &err);
+        /* The suite may name what the library is to read; otherwise it names everything it reads. */
+        yoke_delivery *d = NULL;
+        json_object *named;
+        if (json_object_object_get_ex(args, "reads", &named) && json_object_is_type(named, json_type_array)) {
+            yoke_reads reads[2];
+            size_t n = 0;
+            for (size_t i = 0; i < json_object_array_length(named) && n < 2; i++) {
+                const char *r = json_object_get_string(json_object_array_get_idx(named, i));
+                if (r && strcmp(r, "stream_socket") == 0) {
+                    reads[n++] = YOKE_READS_STREAM_SOCKET;
+                } else if (r && strcmp(r, "shared_object") == 0) {
+                    reads[n++] = YOKE_READS_SHARED_OBJECT;
+                }
+            }
+            d = yoke_subscribe_stream_reading(a, arg(args, "unit"), arg(args, "stream"), reads, n, &err);
+        } else {
+            d = yoke_subscribe_stream(a, arg(args, "unit"), arg(args, "stream"), &err);
+        }
         if (d == NULL) {
             rc = -1;
         } else {
             value = json_object_new_object();
             field(value, "delivery", yoke_delivery_id(d));
             json_object_object_add(value, "flowing", json_object_new_boolean(yoke_delivery_flowing(d)));
+            field(value, "arrives", yoke_delivery_arrives(d));
             watch *w = calloc(1, sizeof *w);
             w->h = h;
             w->delivery = d;
