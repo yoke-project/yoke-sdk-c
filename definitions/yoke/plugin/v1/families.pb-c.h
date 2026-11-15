@@ -49,7 +49,17 @@ typedef enum _Yoke__Plugin__V1__Control__Activate__Transport {
   YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_UNSPECIFIED = 0,
   YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED = 1,
   YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED = 2,
-  YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT = 3
+  YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT = 3,
+  /*
+   * The ordered transport on a stream socket, each envelope preceded by its length as a u32,
+   * little-endian. Used only for a library that offered it at registration.
+   */
+  YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED_STREAM = 4,
+  /*
+   * The framed transport on a stream socket, each frame preceded by its length as a u32,
+   * little-endian, a frame written whole or not at all. Used only for a library that offered it.
+   */
+  YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM = 5
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT)
 } Yoke__Plugin__V1__Control__Activate__Transport;
 typedef enum _Yoke__Plugin__V1__Ack__Outcome {

@@ -17,6 +17,14 @@ static const yoke_stream streams[] = {
     {.id = "conformance.frames", .tolerates_loss = true},
     {0},
 };
+/* With the large stream, declared only to a suite that names max_frame: a Core of an earlier release
+   refuses a Manifest key it does not know. */
+static const yoke_stream streams_large[] = {
+    {.id = "conformance.data"},
+    {.id = "conformance.frames", .tolerates_loss = true},
+    {.id = "conformance.large", .tolerates_loss = true, .max_frame = 4u << 20},
+    {0},
+};
 static const char *const commands[] = {"calibrate", NULL};
 static const char *const queries[] = {"status", NULL};
 static const char *const occurrences[] = {"conformance.drift", NULL};
@@ -28,6 +36,23 @@ static const yoke_capability capabilities[] = {
     {.name = "event.drift.report", .governs = {YOKE_GOVERNS_OCCURRENCE, "conformance.drift"}},
     {0},
 };
+static const yoke_capability capabilities_large[] = {
+    {.name = "stream.data.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.data"}},
+    {.name = "stream.frames.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.frames"}},
+    {.name = "stream.large.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.large"}},
+    {.name = "command.calibrate.accept", .governs = {YOKE_GOVERNS_COMMAND, "calibrate"}},
+    {.name = "query.status.answer", .governs = {YOKE_GOVERNS_QUERY, "status"}},
+    {.name = "event.drift.report", .governs = {YOKE_GOVERNS_OCCURRENCE, "conformance.drift"}},
+    {0},
+};
+static const yoke_declaration declaration_large = {
+    .id = "com.yoke.conformance.c",
+    .streams = streams_large,
+    .commands = commands,
+    .queries = queries,
+    .occurrences = occurrences,
+    .capabilities = capabilities_large,
+};
 static const yoke_declaration declaration = {
     .id = "com.yoke.conformance.c",
     .streams = streams,
@@ -37,7 +62,24 @@ static const yoke_declaration declaration = {
     .capabilities = capabilities,
 };
 
-const yoke_declaration *harness_declaration(void) { return &declaration; }
+/* Whether the suite running the harness names a feature in CONFORMANCE_FEATURES, comma-separated. */
+static bool named(const char *feature) {
+    const char *list = getenv("CONFORMANCE_FEATURES");
+    size_t n = strlen(feature);
+    for (const char *at = list; at && *at;) {
+        const char *end = strchr(at, ',');
+        size_t len = end ? (size_t)(end - at) : strlen(at);
+        if (len == n && strncmp(at, feature, n) == 0) {
+            return true;
+        }
+        at = end ? end + 1 : NULL;
+    }
+    return false;
+}
+
+const yoke_declaration *harness_declaration(void) {
+    return named("max_frame") ? &declaration_large : &declaration;
+}
 
 /* The harness's state: the control socket, the unit once started, and what it was sent to answer. */
 typedef struct harness {
@@ -247,8 +289,8 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
         json_object_object_add(result, "value", value);
         return;
     }
-    static const char *const acts[] = {"close", "emit",   "report-health", "report",
-                                       "ack",   "answer", "fail",          NULL};
+    static const char *const acts[] = {"close", "emit", "emit-sized", "report-health", "report",
+                                       "ack",   "answer", "fail",     NULL};
     bool known = false;
     for (size_t i = 0; acts[i]; i++) {
         known = known || strcmp(verb, acts[i]) == 0;
@@ -270,6 +312,16 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
     } else if (strcmp(verb, "emit") == 0) {
         const char *payload = arg(args, "payload");
         rc = yoke_emit(h->unit, arg(args, "stream"), payload, strlen(payload), &err);
+    } else if (strcmp(verb, "emit-sized") == 0) {
+        /* A payload of the size asked, byte i being i mod 251, as the suite checks it. */
+        json_object *b;
+        size_t size = json_object_object_get_ex(args, "bytes", &b) ? (size_t)json_object_get_int64(b) : 0;
+        unsigned char *payload = malloc(size ? size : 1);
+        for (size_t i = 0; i < size; i++) {
+            payload[i] = (unsigned char)(i % 251);
+        }
+        rc = yoke_emit(h->unit, arg(args, "stream"), payload, size, &err);
+        free(payload);
     } else if (strcmp(verb, "report-health") == 0) {
         json_object *g;
         unsigned grade = json_object_object_get_ex(args, "grade", &g) ? (unsigned)json_object_get_int(g) : 0;

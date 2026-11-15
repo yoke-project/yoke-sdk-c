@@ -226,7 +226,7 @@
 | **Action** | the channel stops it; the author emits on it |
 | **Expected** | the library closes its connection, acknowledges the stop as done, and hands the author the stop; the emission is refused with `stream.inactive`, and nothing reaches the socket |
 
-## yoke-sdk-c:the-plugin-library.18 — the registration offers the shared ring, which this library writes
+## yoke-sdk-c:the-plugin-library.18 — the registration offers the shared ring and the stream socket, which this library writes
 
 | Field | Value |
 | --- | --- |
@@ -237,7 +237,7 @@
 | **Label** | blocking |
 | **Precondition** | a declaration and a channel standing in for the Core |
 | **Action** | start the unit |
-| **Expected** | the registration names one transport offered, the shared object |
+| **Expected** | the registration names three transports offered: the shared object, then the ordered and the framed transports on a stream socket |
 
 ## yoke-sdk-c:the-plugin-library.19 — on the shared ring, Emit writes the slot its sequence selects and wakes every waiter
 

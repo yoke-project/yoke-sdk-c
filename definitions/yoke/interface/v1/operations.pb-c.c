@@ -1419,7 +1419,37 @@ const ProtobufCMessageDescriptor yoke__interface__v1__question__descriptor =
   (ProtobufCMessageInit) yoke__interface__v1__question__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor yoke__interface__v1__unit_stream__field_descriptors[2] =
+static const ProtobufCEnumValue yoke__interface__v1__unit_stream__reads__enum_values_by_number[3] =
+{
+  { "READS_UNSPECIFIED", "YOKE__INTERFACE__V1__UNIT_STREAM__READS__READS_UNSPECIFIED", 0 },
+  { "READS_STREAM_SOCKET", "YOKE__INTERFACE__V1__UNIT_STREAM__READS__READS_STREAM_SOCKET", 1 },
+  { "READS_SHARED_OBJECT", "YOKE__INTERFACE__V1__UNIT_STREAM__READS__READS_SHARED_OBJECT", 2 },
+};
+static const ProtobufCIntRange yoke__interface__v1__unit_stream__reads__value_ranges[] = {
+{0, 0},{0, 3}
+};
+static const ProtobufCEnumValueIndex yoke__interface__v1__unit_stream__reads__enum_values_by_name[3] =
+{
+  { "READS_SHARED_OBJECT", 2 },
+  { "READS_STREAM_SOCKET", 1 },
+  { "READS_UNSPECIFIED", 0 },
+};
+const ProtobufCEnumDescriptor yoke__interface__v1__unit_stream__reads__descriptor =
+{
+  PROTOBUF_C__ENUM_DESCRIPTOR_MAGIC,
+  "yoke.interface.v1.UnitStream.Reads",
+  "Reads",
+  "Yoke__Interface__V1__UnitStream__Reads",
+  "yoke.interface.v1",
+  3,
+  yoke__interface__v1__unit_stream__reads__enum_values_by_number,
+  3,
+  yoke__interface__v1__unit_stream__reads__enum_values_by_name,
+  1,
+  yoke__interface__v1__unit_stream__reads__value_ranges,
+  NULL,NULL,NULL,NULL   /* reserved[1234] */
+};
+static const ProtobufCFieldDescriptor yoke__interface__v1__unit_stream__field_descriptors[3] =
 {
   {
     "unit",
@@ -1445,15 +1475,28 @@ static const ProtobufCFieldDescriptor yoke__interface__v1__unit_stream__field_de
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "reads",
+    3,
+    PROTOBUF_C_LABEL_REPEATED,
+    PROTOBUF_C_TYPE_ENUM,
+    offsetof(Yoke__Interface__V1__UnitStream, n_reads),
+    offsetof(Yoke__Interface__V1__UnitStream, reads),
+    &yoke__interface__v1__unit_stream__reads__descriptor,
+    NULL,
+    0 | PROTOBUF_C_FIELD_FLAG_PACKED,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned yoke__interface__v1__unit_stream__field_indices_by_name[] = {
+  2,   /* field[2] = reads */
   1,   /* field[1] = stream */
   0,   /* field[0] = unit */
 };
 static const ProtobufCIntRange yoke__interface__v1__unit_stream__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 2 }
+  { 0, 3 }
 };
 const ProtobufCMessageDescriptor yoke__interface__v1__unit_stream__descriptor =
 {
@@ -1463,7 +1506,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__unit_stream__descriptor =
   "Yoke__Interface__V1__UnitStream",
   "yoke.interface.v1",
   sizeof(Yoke__Interface__V1__UnitStream),
-  2,
+  3,
   yoke__interface__v1__unit_stream__field_descriptors,
   yoke__interface__v1__unit_stream__field_indices_by_name,
   1,  yoke__interface__v1__unit_stream__number_ranges,
@@ -1961,7 +2004,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__answered__descriptor =
   (ProtobufCMessageInit) yoke__interface__v1__answered__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor yoke__interface__v1__delivering__field_descriptors[5] =
+static const ProtobufCFieldDescriptor yoke__interface__v1__delivering__field_descriptors[7] =
 {
   {
     "delivery",
@@ -2023,18 +2066,44 @@ static const ProtobufCFieldDescriptor yoke__interface__v1__delivering__field_des
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "stream_socket",
+    6,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    offsetof(Yoke__Interface__V1__Delivering, arrives_case),
+    offsetof(Yoke__Interface__V1__Delivering, stream_socket),
+    NULL,
+    &protobuf_c_empty_string,
+    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "shared",
+    7,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    offsetof(Yoke__Interface__V1__Delivering, arrives_case),
+    offsetof(Yoke__Interface__V1__Delivering, shared),
+    NULL,
+    &protobuf_c_empty_string,
+    0 | PROTOBUF_C_FIELD_FLAG_ONEOF,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned yoke__interface__v1__delivering__field_indices_by_name[] = {
   2,   /* field[2] = connection */
   0,   /* field[0] = delivery */
   4,   /* field[4] = flowing */
   3,   /* field[3] = path */
+  6,   /* field[6] = shared */
   1,   /* field[1] = socket */
+  5,   /* field[5] = stream_socket */
 };
 static const ProtobufCIntRange yoke__interface__v1__delivering__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 5 }
+  { 0, 7 }
 };
 const ProtobufCMessageDescriptor yoke__interface__v1__delivering__descriptor =
 {
@@ -2044,7 +2113,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__delivering__descriptor =
   "Yoke__Interface__V1__Delivering",
   "yoke.interface.v1",
   sizeof(Yoke__Interface__V1__Delivering),
-  5,
+  7,
   yoke__interface__v1__delivering__field_descriptors,
   yoke__interface__v1__delivering__field_indices_by_name,
   1,  yoke__interface__v1__delivering__number_ranges,

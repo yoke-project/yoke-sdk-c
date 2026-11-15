@@ -42,6 +42,23 @@ typedef struct Yoke__Interface__V1__Reclaimed Yoke__Interface__V1__Reclaimed;
 
 /* --- enums --- */
 
+/*
+ * What a library can read a delivery from, beyond the per-subscriber packet socket every library
+ * reads. Named at stream.subscribe, and nowhere else; the Core answers with one of them, or with the
+ * packet socket, never with one the library did not name.
+ */
+typedef enum _Yoke__Interface__V1__UnitStream__Reads {
+  YOKE__INTERFACE__V1__UNIT_STREAM__READS__READS_UNSPECIFIED = 0,
+  /*
+   * A stream socket, each frame preceded by its length as a u32, little-endian.
+   */
+  YOKE__INTERFACE__V1__UNIT_STREAM__READS__READS_STREAM_SOCKET = 1,
+  /*
+   * The stream's shared ring itself, handed as a descriptor opened for reading alone.
+   */
+  YOKE__INTERFACE__V1__UNIT_STREAM__READS__READS_SHARED_OBJECT = 2
+    PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(YOKE__INTERFACE__V1__UNIT_STREAM__READS)
+} Yoke__Interface__V1__UnitStream__Reads;
 typedef enum _Yoke__Interface__V1__Acknowledged__Outcome {
   YOKE__INTERFACE__V1__ACKNOWLEDGED__OUTCOME__OUTCOME_UNSPECIFIED = 0,
   YOKE__INTERFACE__V1__ACKNOWLEDGED__OUTCOME__OUTCOME_ACCEPTED = 1,
@@ -208,10 +225,15 @@ struct  Yoke__Interface__V1__UnitStream
   ProtobufCMessage base;
   char *unit;
   char *stream;
+  /*
+   * At stream.subscribe: the deliveries this library can read. Ignored by every other operation.
+   */
+  size_t n_reads;
+  Yoke__Interface__V1__UnitStream__Reads *reads;
 };
 #define YOKE__INTERFACE__V1__UNIT_STREAM__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&yoke__interface__v1__unit_stream__descriptor) \
-    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string }
+    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, 0,NULL }
 
 
 struct  Yoke__Interface__V1__StreamRelease
@@ -360,7 +382,9 @@ typedef enum {
   YOKE__INTERFACE__V1__DELIVERING__ARRIVES__NOT_SET = 0,
   YOKE__INTERFACE__V1__DELIVERING__ARRIVES_SOCKET = 2,
   YOKE__INTERFACE__V1__DELIVERING__ARRIVES_CONNECTION = 3,
-  YOKE__INTERFACE__V1__DELIVERING__ARRIVES_PATH = 4
+  YOKE__INTERFACE__V1__DELIVERING__ARRIVES_PATH = 4,
+  YOKE__INTERFACE__V1__DELIVERING__ARRIVES_STREAM_SOCKET = 6,
+  YOKE__INTERFACE__V1__DELIVERING__ARRIVES_SHARED = 7
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(YOKE__INTERFACE__V1__DELIVERING__ARRIVES__CASE)
 } Yoke__Interface__V1__Delivering__ArrivesCase;
 
@@ -389,6 +413,17 @@ struct  Yoke__Interface__V1__Delivering
      * The browser projection's path, upgraded to a binary WebSocket.
      */
     char *path;
+    /*
+     * A per-subscriber stream socket, each frame preceded by its length, for a library that reads one.
+     */
+    char *stream_socket;
+    /*
+     * A per-subscriber stream socket that is the delivery's lifeline: at each activation a message of
+     * one byte carrying a descriptor of that activation's ring, opened for reading alone; at each stop
+     * a message of length zero. Its closing ends the delivery. For a library that reads the shared
+     * object, and a stream carried on the ring.
+     */
+    char *shared;
   };
 };
 #define YOKE__INTERFACE__V1__DELIVERING__INIT \
@@ -860,6 +895,7 @@ extern const ProtobufCMessageDescriptor yoke__interface__v1__confirm__descriptor
 extern const ProtobufCMessageDescriptor yoke__interface__v1__command__descriptor;
 extern const ProtobufCMessageDescriptor yoke__interface__v1__question__descriptor;
 extern const ProtobufCMessageDescriptor yoke__interface__v1__unit_stream__descriptor;
+extern const ProtobufCEnumDescriptor    yoke__interface__v1__unit_stream__reads__descriptor;
 extern const ProtobufCMessageDescriptor yoke__interface__v1__stream_release__descriptor;
 extern const ProtobufCMessageDescriptor yoke__interface__v1__reclaim__descriptor;
 extern const ProtobufCMessageDescriptor yoke__interface__v1__response__descriptor;
