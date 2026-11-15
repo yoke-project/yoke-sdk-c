@@ -289,8 +289,8 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
         json_object_object_add(result, "value", value);
         return;
     }
-    static const char *const acts[] = {"close", "emit", "emit-sized", "report-health", "report",
-                                       "ack",   "answer", "fail",     NULL};
+    static const char *const acts[] = {"close",  "emit", "emit-sized", "report-health", "report", "ack",
+                                       "answer", "fail", NULL};
     bool known = false;
     for (size_t i = 0; acts[i]; i++) {
         known = known || strcmp(verb, acts[i]) == 0;
