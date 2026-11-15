@@ -663,20 +663,24 @@ const ProtobufCMessageDescriptor yoke__plugin__v1__control__command__descriptor 
   (ProtobufCMessageInit) yoke__plugin__v1__control__command__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCEnumValue yoke__plugin__v1__control__activate__transport__enum_values_by_number[4] =
+static const ProtobufCEnumValue yoke__plugin__v1__control__activate__transport__enum_values_by_number[6] =
 {
   { "TRANSPORT_UNSPECIFIED", "YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_UNSPECIFIED", 0 },
   { "TRANSPORT_ORDERED", "YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED", 1 },
   { "TRANSPORT_FRAMED", "YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED", 2 },
   { "TRANSPORT_SHARED_OBJECT", "YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT", 3 },
+  { "TRANSPORT_ORDERED_STREAM", "YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED_STREAM", 4 },
+  { "TRANSPORT_FRAMED_STREAM", "YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM", 5 },
 };
 static const ProtobufCIntRange yoke__plugin__v1__control__activate__transport__value_ranges[] = {
-{0, 0},{0, 4}
+{0, 0},{0, 6}
 };
-static const ProtobufCEnumValueIndex yoke__plugin__v1__control__activate__transport__enum_values_by_name[4] =
+static const ProtobufCEnumValueIndex yoke__plugin__v1__control__activate__transport__enum_values_by_name[6] =
 {
   { "TRANSPORT_FRAMED", 2 },
+  { "TRANSPORT_FRAMED_STREAM", 5 },
   { "TRANSPORT_ORDERED", 1 },
+  { "TRANSPORT_ORDERED_STREAM", 4 },
   { "TRANSPORT_SHARED_OBJECT", 3 },
   { "TRANSPORT_UNSPECIFIED", 0 },
 };
@@ -687,9 +691,9 @@ const ProtobufCEnumDescriptor yoke__plugin__v1__control__activate__transport__de
   "Transport",
   "Yoke__Plugin__V1__Control__Activate__Transport",
   "yoke.plugin.v1",
-  4,
+  6,
   yoke__plugin__v1__control__activate__transport__enum_values_by_number,
-  4,
+  6,
   yoke__plugin__v1__control__activate__transport__enum_values_by_name,
   1,
   yoke__plugin__v1__control__activate__transport__value_ranges,

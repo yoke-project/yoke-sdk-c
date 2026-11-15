@@ -51,6 +51,8 @@ typedef struct flow {
     char *stream;
     int fd;
     bool framed;
+    /* A stream socket: each message is written whole, after its length as a u32 little-endian. */
+    bool lengthed;
     /* On the shared ring: the mapping, its geometry, and the last sequence published into it. */
     unsigned char *ring;
     size_t ring_size;
@@ -177,6 +179,9 @@ char *yoke_manifest(const yoke_declaration *d) {
             }
             if (s->tolerates_reorder) {
                 fputs("    tolerates_reorder: true\n", out);
+            }
+            if (s->max_frame > 0) {
+                fprintf(out, "    max_frame: %llu\n", s->max_frame);
             }
         }
     }
@@ -606,6 +611,11 @@ static int connect_flow(const Yoke__Plugin__V1__Control__Activate *a, flow **out
         name = "shared";
         type = SOCK_SEQPACKET;
         break;
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED_STREAM:
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM:
+        name = "stream";
+        type = SOCK_STREAM;
+        break;
     default: {
         char *transport = spoken(&yoke__plugin__v1__control__activate__transport__descriptor,
                                  (int)a->transport, "TRANSPORT_");
@@ -641,7 +651,9 @@ static int connect_flow(const Yoke__Plugin__V1__Control__Activate *a, flow **out
     flow *f = calloc(1, sizeof *f);
     f->stream = strdup(a->stream);
     f->fd = fd;
-    f->framed = type == SOCK_DGRAM;
+    f->framed = type == SOCK_DGRAM ||
+                a->transport == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM;
+    f->lengthed = type == SOCK_STREAM;
     f->refs = 1;
     pthread_mutex_init(&f->mu, NULL);
     if (a->transport == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT &&
@@ -663,6 +675,10 @@ static const char *transport_name(Yoke__Plugin__V1__Control__Activate__Transport
         return "framed";
     case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT:
         return "shared_object";
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED_STREAM:
+        return "ordered_stream";
+    case YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM:
+        return "framed_stream";
     default:
         return "ordered";
     }
@@ -735,7 +751,33 @@ int yoke_emit(yoke_unit *u, const char *stream, const void *payload, size_t len,
         message = malloc(size + 1);
         protobuf_c_message_pack(&e.base, message);
     }
-    if (send(f->fd, message, size, MSG_NOSIGNAL) < 0) {
+    if (f->lengthed) {
+        /* On a stream socket the message follows its length, and is written whole. */
+        unsigned char *prefixed = malloc(4 + size);
+        for (int i = 0; i < 4; i++) {
+            prefixed[i] = (unsigned char)(size >> (8 * i));
+        }
+        memcpy(prefixed + 4, message, size);
+        free(message);
+        message = prefixed;
+        size += 4;
+        size_t sent = 0;
+        while (sent < size) {
+            ssize_t n = send(f->fd, message + sent, size - sent, MSG_NOSIGNAL);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                break;
+            }
+            sent += (size_t)n;
+        }
+        if (sent < size) {
+            yoke_error_refuse(err, "stream.inactive", "the transport of %s took nothing: %s", stream,
+                              strerror(errno));
+            result = -1;
+        }
+    } else if (send(f->fd, message, size, MSG_NOSIGNAL) < 0) {
         yoke_error_refuse(err, "stream.inactive", "the transport of %s took nothing: %s", stream,
                           strerror(errno));
         result = -1;
@@ -1096,8 +1138,10 @@ static Yoke__Plugin__V1__RegisterResponse *register_unit(grpc_channel *channel, 
     request.declared = &declared;
     /* This library writes the shared ring, so a stream of it that tolerates loss may be carried there. */
     Yoke__Plugin__V1__Control__Activate__Transport offered[] = {
-        YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT};
-    request.n_transports = 1;
+        YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT,
+        YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED_STREAM,
+        YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM};
+    request.n_transports = 3;
     request.transports = offered;
     grpc_byte_buffer *sent = yoke_pack(&request.base);
     free(owned[0]);

@@ -27,9 +27,11 @@ trap 'rm -rf "$work"' EXIT
 
 # The manifest publishes the module at that version with that digest.
 lines="$(curl -fsSL "$manifest")" || { echo "definitions: the release manifest cannot be read from $manifest"; exit 1; }
-line="$(grep -F "\"published\":\"$module\"" <<<"$lines" | grep -F "\"version\":\"$version\"" | head -n 1 || true)"
+# Read as JSON, one publication line of that module at that version: a cut line names both as text, for
+# other publications, and a textual match once took it for the definitions' line.
+line="$(jq -c --arg m "$module" --arg v "$version" 'select(.line == "publication" and .published == $m and .version == $v)' <<<"$lines" | head -n 1 || true)"
 [[ -n "$line" ]] || { echo "definitions: the manifest publishes no $module $version"; exit 1; }
-grep -qF "\"$digest\"" <<<"$line" || { echo "definitions: the manifest publishes $module $version with another digest than the record's $digest"; exit 1; }
+jq -e --arg d "$digest" '.digests | index($d)' <<<"$line" > /dev/null || { echo "definitions: the manifest publishes $module $version with another digest than the record's $digest"; exit 1; }
 
 # The zip is the one published.
 curl -fsSL -o "$work/module.zip" "$proxy/$module/@v/$version.zip" || { echo "definitions: $module $version cannot be fetched from $proxy"; exit 1; }

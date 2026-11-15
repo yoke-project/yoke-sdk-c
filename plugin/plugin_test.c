@@ -19,7 +19,7 @@
 static const yoke_declaration station = {
     .id = "com.yoke.station.acquire",
     .needs = (const char *const[]){"device:instrument", NULL},
-    .streams = (const yoke_stream[]){{"station.spectra", false, false}, {"station.preview", true, true}, {0}},
+    .streams = (const yoke_stream[]){{"station.spectra", false, false, 0}, {"station.preview", true, true, 0}, {0}},
     .commands = (const char *const[]){"calibrate", NULL},
     .queries = (const char *const[]){"head-status", NULL},
     .occurrences = (const char *const[]){"calibration.drift", NULL},
@@ -829,8 +829,10 @@ static void test_the_registration_offers_the_shared_ring(void) {
     yoke_unit *u = open_unit(&ch, NULL);
     REQUIRE(u != NULL, "the unit did not start");
     const Yoke__Plugin__V1__RegisterRequest *r = channel_request(ch);
-    REQUIRE(r != NULL && r->n_transports == 1 &&
-                r->transports[0] == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT,
+    REQUIRE(r != NULL && r->n_transports == 3 &&
+                r->transports[0] == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_SHARED_OBJECT &&
+                r->transports[1] == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_ORDERED_STREAM &&
+                r->transports[2] == YOKE__PLUGIN__V1__CONTROL__ACTIVATE__TRANSPORT__TRANSPORT_FRAMED_STREAM,
             "the registration offers %zu transports", r ? r->n_transports : 0);
 done:
     close_all(ch, u);

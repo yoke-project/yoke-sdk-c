@@ -28,6 +28,8 @@ typedef struct yoke_stream {
     const char *id;
     bool tolerates_loss;
     bool tolerates_reorder;
+    /* The largest payload the stream emits, in bytes; zero is the Core's default, 1 MiB. */
+    unsigned long long max_frame;
 } yoke_stream;
 
 /* The kind of the one thing a capability governs. */
