@@ -165,7 +165,9 @@ typedef enum { YOKE_READS_STREAM_SOCKET = 1, YOKE_READS_SHARED_OBJECT = 2 } yoke
 /*
  * yoke_subscribe_stream naming only the deliveries given: a stream socket, each frame after its length,
  * and the stream's ring itself, handed on a lifeline at each activation. yoke_subscribe_stream names both;
- * with none, the packet socket.
+ * with none, the packet socket. Reading the ring itself needs a Core of 0.16.0 or later, which wakes the
+ * ring after every stop and every end its lifeline carries: the reader waits on the ring with no bound but
+ * the caller's, and an earlier Core leaves it waiting at a stop until the next frame.
  */
 yoke_delivery *yoke_subscribe_stream_reading(yoke_attachment *a, const char *unit, const char *stream,
                                              const yoke_reads *reads, size_t n_reads, yoke_error *err);
