@@ -7,6 +7,7 @@
 #include "yoke/interface.h"
 
 #include <errno.h>
+#include <linux/futex.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -16,6 +17,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -1453,7 +1455,11 @@ static int read_ring(yoke_delivery *d, yoke_frame *frame) {
 }
 
 /* The next frame of a delivery on the shared ring: the lifeline's messages taken as they come — a ring on
-   one byte, a stop of length zero, the end at its closing — and the ring read, at a bounded interval. */
+   one byte, a stop of length zero, the end at its closing — and the ring read as it is published. With no
+   ring mapped the lifeline is waited on; with one, the ring's wake word is, with no bound but the caller's:
+   the producer wakes it at every frame, and the Core of 0.16.0 after every stop and every end the lifeline
+   carries, the message already written, so the lifeline is read when the word moves and never at an
+   interval. */
 static int next_on_the_ring(yoke_delivery *d, yoke_frame *frame, int timeout_ms, yoke_error *err) {
     struct timespec by;
     if (timeout_ms >= 0) {
@@ -1506,6 +1512,8 @@ static int next_on_the_ring(yoke_delivery *d, yoke_frame *frame, int timeout_ms,
             }
             continue;
         }
+        uint32_t *word = d->ring != NULL ? (uint32_t *)(d->ring + 32) : NULL;
+        uint32_t seen = word != NULL ? __atomic_load_n(word, __ATOMIC_ACQUIRE) : 0;
         if (d->ring != NULL && read_ring(d, frame)) {
             return YOKE_WAIT_GOT;
         }
@@ -1513,8 +1521,14 @@ static int next_on_the_ring(yoke_delivery *d, yoke_frame *frame, int timeout_ms,
         if (left == 0) {
             return YOKE_WAIT_TIMEOUT;
         }
-        struct pollfd w = {.fd = d->fd, .events = POLLIN};
-        poll(&w, 1, d->ring != NULL ? 2 : (left < 0 ? 100 : (left < 100 ? left : 100)));
+        if (word != NULL) {
+            /* Shared, not private: the producer and the Core that wake it are other processes. */
+            struct timespec bound = {.tv_sec = left / 1000, .tv_nsec = (long)(left % 1000) * 1000000L};
+            syscall(SYS_futex, word, FUTEX_WAIT, seen, left < 0 ? NULL : &bound, NULL, 0);
+        } else {
+            struct pollfd w = {.fd = d->fd, .events = POLLIN};
+            poll(&w, 1, left);
+        }
     }
 }
 

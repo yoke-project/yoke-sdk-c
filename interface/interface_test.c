@@ -1,13 +1,17 @@
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <errno.h>
+#include <linux/futex.h>
 #include <poll.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -875,6 +879,238 @@ static void test_a_panel_built_on_the_library_names_nothing_of_the_administrativ
 done:;
 }
 
+typedef struct shared_script {
+    char lifeline[300];
+} shared_script;
+
+static void script_shares(core_conn *c, void *arg) {
+    const shared_script *d = arg;
+    core_send(c, core_opening("standing", 1, NULL, 0));
+    const Yoke__Interface__V1__ClientFrame *f;
+    while (core_next(c, &f, -1) == CORE_FRAME) {
+        const Yoke__Interface__V1__Request *r = request_of(f);
+        if (r != NULL && r->operation_case == YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_SUBSCRIBE) {
+            Yoke__Interface__V1__Delivering delivering = YOKE__INTERFACE__V1__DELIVERING__INIT;
+            Yoke__Interface__V1__Response resp = YOKE__INTERFACE__V1__RESPONSE__INIT;
+            resp.answer_case = YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_SUBSCRIBE;
+            resp.stream_subscribe = &delivering;
+            delivering.delivery = (char *)"00000001";
+            delivering.arrives_case = YOKE__INTERFACE__V1__DELIVERING__ARRIVES_SHARED;
+            delivering.shared = (char *)d->lifeline;
+            delivering.flowing = 1;
+            say_answer(c, f->call, &resp);
+        } else if (r != NULL &&
+                   r->operation_case == YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_UNSUBSCRIBE) {
+            Yoke__Interface__V1__Released released = YOKE__INTERFACE__V1__RELEASED__INIT;
+            Yoke__Interface__V1__Response resp = YOKE__INTERFACE__V1__RESPONSE__INIT;
+            resp.answer_case = YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_UNSUBSCRIBE;
+            resp.stream_unsubscribe = &released;
+            say_answer(c, f->call, &resp);
+        }
+    }
+}
+
+typedef struct ring_hander {
+    int listener, memory, conn;
+} ring_hander;
+
+/* Accepts the lifeline and hands the ring on it, as the Core does at an activation. */
+static void *hand_the_ring(void *arg) {
+    ring_hander *h = arg;
+    h->conn = accept(h->listener, NULL, NULL);
+    if (h->conn < 0) {
+        return NULL;
+    }
+    unsigned char activation[5] = {1, 0, 0, 0, 0};
+    struct iovec io = {.iov_base = activation, .iov_len = sizeof activation};
+    char control[CMSG_SPACE(sizeof(int))] = {0};
+    struct msghdr m = {
+        .msg_iov = &io, .msg_iovlen = 1, .msg_control = control, .msg_controllen = sizeof control};
+    struct cmsghdr *c = CMSG_FIRSTHDR(&m);
+    c->cmsg_level = SOL_SOCKET;
+    c->cmsg_type = SCM_RIGHTS;
+    c->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(c), &h->memory, sizeof(int));
+    sendmsg(h->conn, &m, MSG_NOSIGNAL);
+    return NULL;
+}
+
+typedef struct ring_reader {
+    yoke_delivery *d;
+    pid_t tid;
+    int got;
+    yoke_frame frame;
+    atomic_int done;
+} ring_reader;
+
+static void *read_one(void *arg) {
+    ring_reader *r = arg;
+    r->tid = (pid_t)syscall(SYS_gettid);
+    yoke_error err = {0};
+    r->got = yoke_delivery_next(r->d, &r->frame, -1, &err);
+    yoke_error_clear(&err);
+    atomic_store(&r->done, 1);
+    return NULL;
+}
+
+/* How many times the thread has given up the processor of its own accord. */
+static long waits_of(pid_t tid) {
+    char path[64], line[128];
+    snprintf(path, sizeof path, "/proc/self/task/%d/status", (int)tid);
+    FILE *f = fopen(path, "r");
+    long n = -1;
+    while (f != NULL && fgets(line, sizeof line, f) != NULL) {
+        if (strncmp(line, "voluntary_ctxt_switches:", 24) == 0) {
+            n = atol(line + 24);
+        }
+    }
+    if (f != NULL) {
+        fclose(f);
+    }
+    return n;
+}
+
+static long long now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+static bool until_done(ring_reader *r, int ms) {
+    for (long long by = now_ms() + ms; !atomic_load(&r->done);) {
+        if (now_ms() > by) {
+            return false;
+        }
+        usleep(1000);
+    }
+    return true;
+}
+
+// std: yoke-sdk-c:the-interface-library.10
+static void test_a_reader_of_the_ring_waits_on_its_wake_word(void) {
+    core *k = NULL;
+    yoke_attachment *a = NULL;
+    yoke_delivery *d = NULL;
+    yoke_error err = {0};
+    pthread_t hander, reader, ender;
+    bool handing = false, reading = false, ending = false;
+    ring_reader first = {0}, last = {0};
+    const uint32_t slots = 4, capacity = 64;
+    const size_t size = 64 + slots * (32 + capacity);
+    ring_hander h = {.listener = -1, .memory = -1, .conn = -1};
+    unsigned char *mem = MAP_FAILED;
+    long idle = -1;
+    long long took = -1;
+    bool read_in_time = false, ended = false;
+
+    h.memory = memfd_create("yoke-test", MFD_CLOEXEC);
+    REQUIRE(h.memory >= 0 && ftruncate(h.memory, (off_t)size) == 0, "the case cannot make a ring");
+    mem = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, h.memory, 0);
+    REQUIRE(mem != MAP_FAILED, "the case cannot map its ring");
+    memcpy(mem, "YOKERING", 8);
+    uint32_t header[3] = {1, slots, capacity};
+    memcpy(mem + 8, header, sizeof header);
+    uint32_t *word = (uint32_t *)(mem + 32);
+
+    shared_script script = {0};
+    snprintf(script.lifeline, sizeof script.lifeline, "%s/00000001.sock", check_dir());
+    h.listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
+    strcpy(addr.sun_path, script.lifeline);
+    REQUIRE(h.listener >= 0 && bind(h.listener, (struct sockaddr *)&addr, sizeof addr) == 0 &&
+                listen(h.listener, 1) == 0,
+            "the case cannot listen at the lifeline");
+    pthread_create(&hander, NULL, hand_the_ring, &h);
+    handing = true;
+
+    k = core_start(check_dir(), script_shares, &script);
+    a = yoke_attach(core_socket(k), NULL, &err);
+    REQUIRE(a != NULL, "the attachment failed");
+    d = yoke_subscribe_stream(a, "acquire", "spectra", &err);
+    REQUIRE(d != NULL, "the subscription failed");
+    pthread_join(hander, NULL);
+    handing = false;
+
+    /* Waiting a second on a ring with nothing in it. */
+    first.d = d;
+    pthread_create(&reader, NULL, read_one, &first);
+    reading = true;
+    usleep(300000);
+    long before = waits_of(first.tid);
+    usleep(1000000);
+    idle = waits_of(first.tid) - before;
+
+    /* The producer publishes one frame and wakes whoever waits on the word. */
+    unsigned char *slot = mem + 64;
+    uint64_t clock = 1001;
+    uint32_t length = 3;
+    memcpy(slot + 8, &clock, 8);
+    memcpy(slot + 16, &length, 4);
+    memcpy(slot + 32, "one", 3);
+    __atomic_store_n((uint64_t *)slot, (uint64_t)1, __ATOMIC_RELEASE);
+    __atomic_store_n((uint64_t *)(mem + 24), (uint64_t)1, __ATOMIC_RELEASE);
+    __atomic_fetch_add(word, 1, __ATOMIC_ACQ_REL);
+    long long published = now_ms();
+    syscall(SYS_futex, word, FUTEX_WAKE, INT32_MAX, NULL, NULL, 0);
+    read_in_time = until_done(&first, 2000);
+    took = now_ms() - published;
+
+    /* The lifeline closes and the ring is woken, as the Core does at a delivery's end. */
+    if (read_in_time) {
+        last.d = d;
+        pthread_create(&ender, NULL, read_one, &last);
+        ending = true;
+        usleep(100000);
+    }
+    close(h.conn);
+    h.conn = -1;
+    __atomic_fetch_add(word, 1, __ATOMIC_ACQ_REL);
+    syscall(SYS_futex, word, FUTEX_WAKE, INT32_MAX, NULL, NULL, 0);
+    ended = read_in_time && until_done(&last, 2000);
+
+    REQUIRE(idle >= 0 && idle <= 5, "waiting a second on an empty ring, the reader woke %ld times", idle);
+    REQUIRE(read_in_time && first.got == YOKE_WAIT_GOT && first.frame.sequence == 1 &&
+                first.frame.sent_at == 1001 && first.frame.payload_len == 3 &&
+                memcmp(first.frame.payload, "one", 3) == 0,
+            "the frame published was not read as written");
+    REQUIRE(took < 100, "the frame was read %lld ms after it was published", took);
+    REQUIRE(ended && last.got == YOKE_WAIT_COMPLETE, "the delivery did not end when its lifeline closed");
+done:
+    if (reading) {
+        pthread_join(reader, NULL);
+    }
+    if (ending) {
+        pthread_join(ender, NULL);
+    }
+    if (handing) {
+        pthread_join(hander, NULL);
+    }
+    yoke_frame_clear(&first.frame);
+    yoke_frame_clear(&last.frame);
+    yoke_error_clear(&err);
+    if (d != NULL) {
+        yoke_delivery_release(d, NULL);
+    }
+    if (a != NULL) {
+        yoke_detach(a);
+    }
+    if (k != NULL) {
+        core_stop(k);
+    }
+    if (h.conn >= 0) {
+        close(h.conn);
+    }
+    if (h.listener >= 0) {
+        close(h.listener);
+    }
+    if (mem != MAP_FAILED) {
+        munmap(mem, size);
+    }
+    if (h.memory >= 0) {
+        close(h.memory);
+    }
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-interface-library.01",
@@ -892,6 +1128,7 @@ int main(void) {
         {"yoke-sdk-c:the-interface-library.08", test_closing_an_attachment_ends_it_in_order},
         {"yoke-sdk-c:the-interface-library.09",
          test_a_panel_built_on_the_library_names_nothing_of_the_administrative_contract},
+        {"yoke-sdk-c:the-interface-library.10", test_a_reader_of_the_ring_waits_on_its_wake_word},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }
