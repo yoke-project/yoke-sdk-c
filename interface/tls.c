@@ -296,7 +296,7 @@ yoke_pump *yoke_tls_connect(const char *address, const char *roots_pem, const ch
         X509_VERIFY_PARAM_set1_ip_asc(param, expected);
     } else {
         SSL_set_tlsext_host_name(ssl, expected);
-        SSL_set1_host(ssl, expected);
+        X509_VERIFY_PARAM_set1_host(param, expected, 0);
     }
     SSL_set_fd(ssl, net);
     if (SSL_connect(ssl) != 1) {
