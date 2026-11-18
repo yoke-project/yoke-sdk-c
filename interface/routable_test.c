@@ -25,7 +25,8 @@ typedef struct pki {
 
 static int run(const char *dir, const char *command) {
     char line[2048];
-    snprintf(line, sizeof line, "cd %s && %s >/dev/null 2>&1", dir, command);
+    /* The command's own redirections stand: what is silenced is only what it does not send elsewhere. */
+    snprintf(line, sizeof line, "cd %s && { %s; } >/dev/null 2>&1", dir, command);
     return system(line);
 }
 
