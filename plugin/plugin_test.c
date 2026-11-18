@@ -959,8 +959,9 @@ static void test_a_unit_is_named_after_its_executable(void) {
     REQUIRE(u != NULL, "the unit did not start");
     f = fopen("/proc/self/cmdline", "r");
     REQUIRE(f != NULL, "the case cannot read its arguments");
-    fread(first, 1, sizeof first - 1, f);
+    size_t read = fread(first, 1, sizeof first - 1, f);
     fclose(f);
+    REQUIRE(read > 0, "the case read no arguments");
     f = fopen("/proc/self/comm", "r");
     REQUIRE(f != NULL && fgets(comm, sizeof comm, f) != NULL, "the case cannot read its name");
     fclose(f);
