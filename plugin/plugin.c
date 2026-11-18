@@ -1092,6 +1092,32 @@ static void *beat(void *arg) {
 
 /* ---- starting ---- */
 
+/* Names the process after its executable. The Core starts a unit through the descriptor it took the
+ * executable's digest through, and the kernel names a process after the path executed — /proc/self/fd/3,
+ * so 3 in every list of processes and in the journal. The name is the executable's, from the first argument
+ * the Core passes, cut to the kernel's 15 bytes; where it cannot be read or written, nothing is said. */
+static void name_the_process(void) {
+    char first[4096];
+    FILE *cmdline = fopen("/proc/self/cmdline", "re");
+    if (cmdline == NULL) {
+        return;
+    }
+    size_t n = fread(first, 1, sizeof first - 1, cmdline);
+    fclose(cmdline);
+    first[n] = '\0';
+    const char *name = strrchr(first, '/');
+    name = name != NULL ? name + 1 : first;
+    if (*name == '\0') {
+        return;
+    }
+    FILE *comm = fopen("/proc/self/comm", "we");
+    if (comm == NULL) {
+        return;
+    }
+    fprintf(comm, "%.15s", name);
+    fclose(comm);
+}
+
 static const char *process_getenv(const char *name, void *context) {
     (void)context;
     return getenv(name);
@@ -1207,6 +1233,7 @@ yoke_unit *yoke_start_with(const yoke_declaration *declaration, yoke_getenv gete
     if (yoke_environment(&env, getenv, context, err) != 0) {
         return NULL;
     }
+    name_the_process();
     // Bind before registering: registered and unreachable is the one order that is wrong.
     int listener = bind_unit(env.bind, err);
     if (listener < 0) {

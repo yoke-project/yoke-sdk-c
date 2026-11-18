@@ -947,6 +947,32 @@ done:
     }
 }
 
+// std: yoke-sdk-c:the-plugin-library.20
+static void test_a_unit_is_named_after_its_executable(void) {
+    channel *ch = NULL;
+    yoke_unit *u = NULL;
+    char first[4096] = {0}, comm[32] = {0};
+    /* As the kernel names a unit the Core started through the descriptor. */
+    FILE *f = fopen("/proc/self/comm", "w");
+    REQUIRE(f != NULL && fputs("3", f) >= 0 && fclose(f) == 0, "the case cannot name its process");
+    u = open_unit(&ch, NULL);
+    REQUIRE(u != NULL, "the unit did not start");
+    f = fopen("/proc/self/cmdline", "r");
+    REQUIRE(f != NULL, "the case cannot read its arguments");
+    fread(first, 1, sizeof first - 1, f);
+    fclose(f);
+    f = fopen("/proc/self/comm", "r");
+    REQUIRE(f != NULL && fgets(comm, sizeof comm, f) != NULL, "the case cannot read its name");
+    fclose(f);
+    comm[strcspn(comm, "\n")] = '\0';
+    const char *name = strrchr(first, '/');
+    name = name != NULL ? name + 1 : first;
+    REQUIRE(strlen(comm) == (strlen(name) < 15 ? strlen(name) : 15) && strncmp(comm, name, 15) == 0,
+            "the process is named %s, and its executable %s", comm, name);
+done:
+    close_all(ch, u);
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-plugin-library.01", test_a_declaration_generates_the_manifest},
@@ -969,6 +995,7 @@ int main(void) {
         {"yoke-sdk-c:the-plugin-library.17", test_a_stop_closes_the_transport_and_emit_is_refused_after_it},
         {"yoke-sdk-c:the-plugin-library.18", test_the_registration_offers_the_shared_ring},
         {"yoke-sdk-c:the-plugin-library.19", test_on_the_shared_ring_emit_writes_the_slot_and_wakes},
+        {"yoke-sdk-c:the-plugin-library.20", test_a_unit_is_named_after_its_executable},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }

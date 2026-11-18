@@ -251,3 +251,16 @@
 | **Precondition** | an open Session; a ring of layout 1, four slots of eight bytes, in memory the test made; a packet socket the test listens on, which hands the ring's descriptor on one byte to the connection it accepts; and a second socket handing memory that is not a ring |
 | **Action** | the channel activates a loss-tolerant stream at the first socket and another at the second; the author emits `abc`, then `defgh`, then nine bytes |
 | **Expected** | the first activation is acknowledged as done and the second as failed, with a line; after the two frames the first slot holds sequence 1, a clock and `abc`, the second sequence 2 and `defgh`, the header's published sequence is 2 and the wake word has moved twice; the nine bytes are refused `stream.inactive`, a slot holding eight, and nothing is published for them |
+
+## yoke-sdk-c:the-plugin-library.20 — a unit is named after its executable, not after the descriptor it was started through
+
+| Field | Value |
+| --- | --- |
+| **Cites** | arch/35-units/04 §The plan |
+| **Level** | L1 |
+| **Method** | test |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | a process the kernel names `3`, as it names a unit the Core started through `/proc/self/fd/3` |
+| **Action** | start a unit |
+| **Expected** | the process's name is its executable's, from its first argument, cut to 15 bytes |
