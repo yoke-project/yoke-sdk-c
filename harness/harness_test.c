@@ -39,6 +39,10 @@ static const char *suite_getenv(const char *name, void *context) {
     if (strcmp(name, "YOKE_UNIT") == 0) {
         return "harness";
     }
+    if (strncmp(name, "CONFORMANCE_", 12) == 0) {
+        /* What a case names of the suite: the features, the secret it placed. */
+        return getenv(name);
+    }
     return s->ch ? channel_getenv(name, s->ch) : NULL;
 }
 
@@ -436,6 +440,76 @@ static void test_it_declares_a_stream_on_each_transport_each_governed(void) {
 done:;
 }
 
+// std: yoke-sdk-c:the-harness.11
+static void test_a_question_is_observed_with_who_asked_its_deadline_and_its_chain(void) {
+    suite s;
+    channel *ch = NULL;
+    json_object *q = NULL;
+    REQUIRE(started(&s, &ch), "the harness's unit did not start");
+    Yoke__Plugin__V1__Query__Question question = YOKE__PLUGIN__V1__QUERY__QUESTION__INIT;
+    question.type = (char *)"status";
+    question.asker = (char *)"operator:ada";
+    question.deadline = 1795000000123ULL;
+    question.chain = (char *)"0123456789abcdef0123456789abcdef";
+    Yoke__Plugin__V1__Query query = YOKE__PLUGIN__V1__QUERY__INIT;
+    query.kind_case = YOKE__PLUGIN__V1__QUERY__KIND_QUESTION;
+    query.question = &question;
+    Yoke__Plugin__V1__Envelope e = YOKE__PLUGIN__V1__ENVELOPE__INIT;
+    e.payload_case = YOKE__PLUGIN__V1__ENVELOPE__PAYLOAD_QUERY;
+    e.query = &query;
+    char id[32];
+    channel_send(ch, &e, id);
+    q = observation(&s);
+    REQUIRE(q && is(q, "kind", "question") && is(q, "fields.asker", "operator:ada") &&
+                is(q, "fields.deadline", "1795000000123") &&
+                is(q, "fields.chain", "0123456789abcdef0123456789abcdef"),
+            "the question was observed as %s", q ? json_object_to_json_string(q) : "(nothing)");
+done:
+    json_object_put(q);
+}
+
+static bool declares_rewriting(const yoke_declaration *d) {
+    bool needs = false;
+    for (size_t i = 0; d->needs && d->needs[i]; i++) {
+        needs = needs || strcmp(d->needs[i], "secret:token") == 0;
+    }
+    return needs && d->rewrites && d->rewrites[0] && strcmp(d->rewrites[0], "token") == 0 && !d->rewrites[1];
+}
+
+// std: yoke-sdk-c:the-harness.12
+static void test_the_secret_it_rewrites_is_declared_where_the_suite_names_it(void) {
+    suite s;
+    channel *ch = NULL;
+    json_object *r = NULL;
+    char *path = NULL, *text = NULL;
+    setenv("CONFORMANCE_FEATURES", "max_frame", 1);
+    REQUIRE(!declares_rewriting(harness_declaration()) && harness_declaration()->rewrites == NULL,
+            "a suite that does not name rewrites is declared a secret to rewrite");
+    setenv("CONFORMANCE_FEATURES", "max_frame,rewrites", 1);
+    REQUIRE(declares_rewriting(harness_declaration()), "a suite naming rewrites is not declared the secret");
+    REQUIRE(asprintf(&path, "%s/value", check_dir()) > 0, "no path");
+    FILE *f = fopen(path, "w");
+    REQUIRE(f != NULL, "the secret cannot be placed");
+    fputs("first", f);
+    fclose(f);
+    setenv("CONFORMANCE_SECRET", path, 1);
+    REQUIRE(started(&s, &ch), "the harness's unit did not start");
+    suite_write(&s,
+                "{\"type\":\"directive\",\"id\":\"w\",\"verb\":\"rewrite\",\"args\":{\"secret\":\"token\","
+                "\"value\":\"second\"}}");
+    r = result_of(&s, "w");
+    REQUIRE(r && !str(r, "value.failed") && !str(r, "refusal") && !str(r, "unrecognised"),
+            "the rewrite answered %s", r ? json_object_to_json_string(r) : "(nothing)");
+    text = check_read(path);
+    REQUIRE(text && strcmp(text, "second") == 0, "the secret holds %s", text ? text : "(nothing)");
+done:
+    unsetenv("CONFORMANCE_FEATURES");
+    unsetenv("CONFORMANCE_SECRET");
+    json_object_put(r);
+    free(text);
+    free(path);
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-harness.01", test_hello_first_with_what_the_library_declares},
@@ -449,6 +523,8 @@ int main(void) {
         {"yoke-sdk-c:the-harness.08", test_the_suite_is_the_published_pair_authenticated_and_never_built},
         {"yoke-sdk-c:the-harness.09", test_a_question_is_observed_with_the_bytes_it_carries},
         {"yoke-sdk-c:the-harness.10", test_it_declares_a_stream_on_each_transport_each_governed},
+        {"yoke-sdk-c:the-harness.11", test_a_question_is_observed_with_who_asked_its_deadline_and_its_chain},
+        {"yoke-sdk-c:the-harness.12", test_the_secret_it_rewrites_is_declared_where_the_suite_names_it},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }

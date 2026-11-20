@@ -948,7 +948,7 @@ const ProtobufCMessageDescriptor yoke__plugin__v1__ack__descriptor =
   (ProtobufCMessageInit) yoke__plugin__v1__ack__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor yoke__plugin__v1__query__question__field_descriptors[2] =
+static const ProtobufCFieldDescriptor yoke__plugin__v1__query__question__field_descriptors[5] =
 {
   {
     "type",
@@ -974,15 +974,54 @@ static const ProtobufCFieldDescriptor yoke__plugin__v1__query__question__field_d
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "asker",
+    3,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Yoke__Plugin__V1__Query__Question, asker),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "deadline",
+    4,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_UINT64,
+    0,   /* quantifier_offset */
+    offsetof(Yoke__Plugin__V1__Query__Question, deadline),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "chain",
+    5,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Yoke__Plugin__V1__Query__Question, chain),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned yoke__plugin__v1__query__question__field_indices_by_name[] = {
+  2,   /* field[2] = asker */
+  4,   /* field[4] = chain */
+  3,   /* field[3] = deadline */
   1,   /* field[1] = payload */
   0,   /* field[0] = type */
 };
 static const ProtobufCIntRange yoke__plugin__v1__query__question__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 2 }
+  { 0, 5 }
 };
 const ProtobufCMessageDescriptor yoke__plugin__v1__query__question__descriptor =
 {
@@ -992,7 +1031,7 @@ const ProtobufCMessageDescriptor yoke__plugin__v1__query__question__descriptor =
   "Yoke__Plugin__V1__Query__Question",
   "yoke.plugin.v1",
   sizeof(Yoke__Plugin__V1__Query__Question),
-  2,
+  5,
   yoke__plugin__v1__query__question__field_descriptors,
   yoke__plugin__v1__query__question__field_indices_by_name,
   1,  yoke__plugin__v1__query__question__number_ranges,

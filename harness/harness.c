@@ -29,38 +29,25 @@ static const char *const commands[] = {"calibrate", NULL};
 static const char *const queries[] = {"status", NULL};
 static const char *const occurrences[] = {"conformance.drift", NULL};
 static const yoke_capability capabilities[] = {
-    {.name = "stream.data.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.data"}},
-    {.name = "stream.frames.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.frames"}},
-    {.name = "command.calibrate.accept", .governs = {YOKE_GOVERNS_COMMAND, "calibrate"}},
-    {.name = "query.status.answer", .governs = {YOKE_GOVERNS_QUERY, "status"}},
-    {.name = "event.drift.report", .governs = {YOKE_GOVERNS_OCCURRENCE, "conformance.drift"}},
+    {.name = "stream.data.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.data", NULL}},
+    {.name = "stream.frames.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.frames", NULL}},
+    {.name = "command.calibrate.accept", .governs = {YOKE_GOVERNS_COMMAND, "calibrate", NULL}},
+    {.name = "query.status.answer", .governs = {YOKE_GOVERNS_QUERY, "status", NULL}},
+    {.name = "event.drift.report", .governs = {YOKE_GOVERNS_OCCURRENCE, "conformance.drift", NULL}},
     {0},
 };
 static const yoke_capability capabilities_large[] = {
-    {.name = "stream.data.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.data"}},
-    {.name = "stream.frames.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.frames"}},
-    {.name = "stream.large.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.large"}},
-    {.name = "command.calibrate.accept", .governs = {YOKE_GOVERNS_COMMAND, "calibrate"}},
-    {.name = "query.status.answer", .governs = {YOKE_GOVERNS_QUERY, "status"}},
-    {.name = "event.drift.report", .governs = {YOKE_GOVERNS_OCCURRENCE, "conformance.drift"}},
+    {.name = "stream.data.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.data", NULL}},
+    {.name = "stream.frames.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.frames", NULL}},
+    {.name = "stream.large.publish", .governs = {YOKE_GOVERNS_STREAM, "conformance.large", NULL}},
+    {.name = "command.calibrate.accept", .governs = {YOKE_GOVERNS_COMMAND, "calibrate", NULL}},
+    {.name = "query.status.answer", .governs = {YOKE_GOVERNS_QUERY, "status", NULL}},
+    {.name = "event.drift.report", .governs = {YOKE_GOVERNS_OCCURRENCE, "conformance.drift", NULL}},
     {0},
 };
-static const yoke_declaration declaration_large = {
-    .id = "com.yoke.conformance.c",
-    .streams = streams_large,
-    .commands = commands,
-    .queries = queries,
-    .occurrences = occurrences,
-    .capabilities = capabilities_large,
-};
-static const yoke_declaration declaration = {
-    .id = "com.yoke.conformance.c",
-    .streams = streams,
-    .commands = commands,
-    .queries = queries,
-    .occurrences = occurrences,
-    .capabilities = capabilities,
-};
+/* With `rewrites`, the harness needs the secret `token` and rewrites it. */
+static const char *const needs_rewriting[] = {"secret:token", NULL};
+static const char *const rewrites[] = {"token", NULL};
 
 /* Whether the suite running the harness names a feature in CONFORMANCE_FEATURES, comma-separated. */
 static bool named(const char *feature) {
@@ -77,8 +64,22 @@ static bool named(const char *feature) {
     return false;
 }
 
+/* The harness's declaration for the suite running it: a feature the suite names is declared, and one it does
+   not name is left out, because a Core of an earlier release refuses a Manifest key it does not know. */
 const yoke_declaration *harness_declaration(void) {
-    return named("max_frame") ? &declaration_large : &declaration;
+    static yoke_declaration d;
+    bool large = named("max_frame"), rewriting = named("rewrites");
+    d = (yoke_declaration){
+        .id = "com.yoke.conformance.c",
+        .needs = rewriting ? needs_rewriting : NULL,
+        .streams = large ? streams_large : streams,
+        .commands = commands,
+        .queries = queries,
+        .occurrences = occurrences,
+        .capabilities = large ? capabilities_large : capabilities,
+        .rewrites = rewriting ? rewrites : NULL,
+    };
+    return &d;
 }
 
 /* The harness's state: the control socket, the unit once started, and what it was sent to answer. */
@@ -171,6 +172,9 @@ static void *observe(void *arg) {
             field(f, "type", e.type);
             json_object_object_add(f, "payload",
                                    json_object_new_string_len((const char *)e.payload, (int)e.payload_len));
+            field(f, "asker", e.asker);
+            json_object_object_add(f, "deadline", json_object_new_int64((int64_t)e.deadline_ms));
+            field(f, "chain", e.chain);
             break;
         case YOKE_ACTIVATED:
             kind = "activated";
@@ -289,8 +293,8 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
         json_object_object_add(result, "value", value);
         return;
     }
-    static const char *const acts[] = {"close",  "emit", "emit-sized", "report-health", "report", "ack",
-                                       "answer", "fail", NULL};
+    static const char *const acts[] = {"close", "emit",   "emit-sized", "report-health", "report",
+                                       "ack",   "answer", "fail",       "rewrite",       NULL};
     bool known = false;
     for (size_t i = 0; acts[i]; i++) {
         known = known || strcmp(verb, acts[i]) == 0;
@@ -338,6 +342,21 @@ static void act(harness *h, const char *verb, json_object *args, yoke_getenv get
         yoke_event none = {.kind = YOKE_COMMAND, .id = (char *)""};
         const yoke_event *c = held(h, YOKE_COMMAND, arg(args, "command"));
         rc = yoke_ack(h->unit, c ? c : &none, YOKE_DONE, arg(args, "line"), &err);
+    } else if (strcmp(verb, "rewrite") == 0) {
+        /* The secret the suite placed, at the path the Core resolved for it. */
+        const char *path = getenv("CONFORMANCE_SECRET", context);
+        if (strcmp(arg(args, "secret"), "token") != 0 || path == NULL || path[0] == '\0') {
+            json_object_object_add(value, "failed", json_object_new_boolean(true));
+            json_object_object_add(result, "value", value);
+            return;
+        }
+        const char *v = arg(args, "value");
+        if (yoke_rewrite(path, v, strlen(v), &err) != 0) {
+            yoke_error_clear(&err);
+            json_object_object_add(value, "failed", json_object_new_boolean(true));
+            json_object_object_add(result, "value", value);
+            return;
+        }
     } else if (strcmp(verb, "fail") == 0) {
         /* A question or a command the Core sent, failed with a code and a message, correlated to it. */
         rc = yoke_fail(h->unit, arg(args, "about"), arg(args, "code"), arg(args, "message"), &err);

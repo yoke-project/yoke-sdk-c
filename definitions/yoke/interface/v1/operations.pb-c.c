@@ -1355,7 +1355,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__command__descriptor =
   (ProtobufCMessageInit) yoke__interface__v1__command__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor yoke__interface__v1__question__field_descriptors[3] =
+static const ProtobufCFieldDescriptor yoke__interface__v1__question__field_descriptors[4] =
 {
   {
     "unit",
@@ -1393,8 +1393,21 @@ static const ProtobufCFieldDescriptor yoke__interface__v1__question__field_descr
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "cause",
+    4,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Yoke__Interface__V1__Question, cause),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned yoke__interface__v1__question__field_indices_by_name[] = {
+  3,   /* field[3] = cause */
   2,   /* field[2] = payload */
   1,   /* field[1] = type */
   0,   /* field[0] = unit */
@@ -1402,7 +1415,7 @@ static const unsigned yoke__interface__v1__question__field_indices_by_name[] = {
 static const ProtobufCIntRange yoke__interface__v1__question__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 3 }
+  { 0, 4 }
 };
 const ProtobufCMessageDescriptor yoke__interface__v1__question__descriptor =
 {
@@ -1412,7 +1425,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__question__descriptor =
   "Yoke__Interface__V1__Question",
   "yoke.interface.v1",
   sizeof(Yoke__Interface__V1__Question),
-  3,
+  4,
   yoke__interface__v1__question__field_descriptors,
   yoke__interface__v1__question__field_indices_by_name,
   1,  yoke__interface__v1__question__number_ranges,

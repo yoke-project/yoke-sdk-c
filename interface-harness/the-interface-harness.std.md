@@ -69,3 +69,16 @@
 | **Precondition** | `ci/conformance.sh` |
 | **Action** | read it |
 | **Expected** | it builds the interface harness and runs the suite against it, beside the plugin and the administrative harnesses |
+
+## yoke-sdk-c:the-interface-harness.06 — a query carries the cause it is given, and `stream-follow` is a verb it knows
+
+| Field | Value |
+| --- | --- |
+| **Cites** | specs/70.60 · specs/28.60 · arch/90-sdks/04 §The control protocol |
+| **Level** | L1 |
+| **Method** | test |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | the harness attached to a channel that refuses a question naming a cause `use.cause.unknown`, and anything else `subject.unknown` |
+| **Action** | `query` naming the cause `q-none`; then `stream-follow` of a unit nobody declared |
+| **Expected** | `use.cause.unknown` naming the item `q-none`; then `subject.unknown`, not unrecognised |

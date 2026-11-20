@@ -110,6 +110,11 @@ int yoke_command(yoke_attachment *a, const char *unit, const char *type, const v
                  Yoke__Interface__V1__Response **answer, yoke_error *err);
 int yoke_ask(yoke_attachment *a, const char *unit, const char *type, const void *payload, size_t len,
              Yoke__Interface__V1__Response **answer, yoke_error *err);
+/* yoke_ask on a need's channel while answering another question: cause is the identifier of the question
+   the asking unit was delivered and is answering, and the Core gives this question that one's chain and its
+   deadline less a margin. Only a need's channel takes a cause; any other refuses it `use.cause.unknown`. */
+int yoke_ask_caused(yoke_attachment *a, const char *cause, const char *unit, const char *type,
+                    const void *payload, size_t len, Yoke__Interface__V1__Response **answer, yoke_error *err);
 int yoke_start_stream(yoke_attachment *a, const char *unit, const char *stream,
                       Yoke__Interface__V1__Response **answer, yoke_error *err);
 int yoke_stop_stream(yoke_attachment *a, const char *unit, const char *stream,
@@ -183,6 +188,30 @@ int yoke_delivery_next(yoke_delivery *d, yoke_frame *frame, int timeout_ms, yoke
 
 /* Ends the delivery — the Core is told — and frees it. */
 int yoke_delivery_release(yoke_delivery *d, yoke_error *err);
+
+/*
+ * A unit's stream followed: started where it may and subscribed, and started and subscribed again each time
+ * its delivery ends because the unit's Session did — a restart of the unit, on a need's channel or any
+ * other. Frames come in order within a delivery; the next delivery's numbering is its own. While the unit is
+ * not there — `unit.not_running`, `unit.no_session` — the follow tries again every YOKE_FOLLOW_RETRY_MS.
+ */
+typedef struct yoke_follow yoke_follow;
+#define YOKE_FOLLOW_RETRY_MS 250
+
+/* Follows a stream, naming the deliveries given, or every one this library reads where reads is NULL. The
+   first subscription is made before it returns; a refusal of it other than the unit's absence is returned. */
+yoke_follow *yoke_follow_stream(yoke_attachment *a, const char *unit, const char *stream,
+                                const yoke_reads *reads, size_t n_reads, yoke_error *err);
+
+/* The next frame across the unit's restarts, with the results of yoke_delivery_next save COMPLETE: FAILED
+   once the attachment ended or the Core refused for another reason than the unit's absence. */
+int yoke_follow_next(yoke_follow *f, yoke_frame *frame, int timeout_ms, yoke_error *err);
+
+/* The identifier of the delivery the last frame came on. */
+const char *yoke_follow_delivery(const yoke_follow *f);
+
+/* Ends the follow, releasing its delivery, and frees it. */
+int yoke_follow_close(yoke_follow *f, yoke_error *err);
 
 #ifdef __cplusplus
 }
