@@ -214,10 +214,15 @@ struct  Yoke__Interface__V1__Question
   char *unit;
   char *type;
   ProtobufCBinaryData payload;
+  /*
+   * On a need's channel only: the identifier of a question the asking unit was delivered and has not
+   * answered. The Core derives this question's chain and deadline from it.
+   */
+  char *cause;
 };
 #define YOKE__INTERFACE__V1__QUESTION__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&yoke__interface__v1__question__descriptor) \
-    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, {0,NULL} }
+    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, {0,NULL}, (char *)protobuf_c_empty_string }
 
 
 struct  Yoke__Interface__V1__UnitStream

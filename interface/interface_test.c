@@ -1111,6 +1111,178 @@ done:
     }
 }
 
+/* ---- case 11: a question's cause ---- */
+
+static void script_refuses_a_cause(core_conn *c, void *arg) {
+    (void)arg;
+    core_send(c, core_opening("standing", 1, NULL, 0));
+    const Yoke__Interface__V1__ClientFrame *f;
+    while (core_next(c, &f, -1) == CORE_FRAME) {
+        const Yoke__Interface__V1__Request *r = request_of(f);
+        if (r == NULL || r->operation_case != YOKE__INTERFACE__V1__REQUEST__OPERATION_QUERY) {
+            continue;
+        }
+        if (r->query->cause != NULL && r->query->cause[0] != '\0') {
+            Yoke__Interface__V1__Refusal refusal = YOKE__INTERFACE__V1__REFUSAL__INIT;
+            refusal.code = (char *)"use.cause.unknown";
+            refusal.message = (char *)"no such question";
+            refusal.detail_case = YOKE__INTERFACE__V1__REFUSAL__DETAIL_ITEM;
+            refusal.item = r->query->cause;
+            say_refusal(c, f->call, &refusal);
+        } else {
+            Yoke__Interface__V1__Answered answered = YOKE__INTERFACE__V1__ANSWERED__INIT;
+            answered.payload.data = (uint8_t *)"42";
+            answered.payload.len = 2;
+            Yoke__Interface__V1__Response resp = YOKE__INTERFACE__V1__RESPONSE__INIT;
+            resp.answer_case = YOKE__INTERFACE__V1__RESPONSE__ANSWER_QUERY;
+            resp.query = &answered;
+            say_answer(c, f->call, &resp);
+        }
+    }
+}
+
+// std: yoke-sdk-c:the-interface-library.11
+static void test_a_question_may_name_its_cause(void) {
+    core *k = core_start(check_dir(), script_refuses_a_cause, NULL);
+    yoke_error err = {0};
+    Yoke__Interface__V1__Response *r = NULL;
+    yoke_attachment *a = yoke_attach(core_socket(k), NULL, &err);
+    REQUIRE(a != NULL, "the attachment failed");
+    REQUIRE(yoke_ask(a, "source", "status", "p", 1, &r, &err) == 0 && r->query->payload.len == 2 &&
+                memcmp(r->query->payload.data, "42", 2) == 0,
+            "the question with no cause was not answered: %s", code_of(&err));
+    yoke_response_free(r);
+    r = NULL;
+    REQUIRE(yoke_ask_caused(a, "q-7", "source", "status", "p", 1, &r, &err) != 0 &&
+                yoke_is_refusal(&err, "use.cause.unknown") && err.item != NULL &&
+                strcmp(err.item, "q-7") == 0,
+            "the caused question's refusal was %s", code_of(&err));
+    size_t queries = 0;
+    for (size_t i = 0; i < core_frames(k); i++) {
+        const Yoke__Interface__V1__Request *q = request_of(core_frame(k, i, NULL));
+        if (q == NULL || q->operation_case != YOKE__INTERFACE__V1__REQUEST__OPERATION_QUERY) {
+            continue;
+        }
+        const char *want = queries++ == 0 ? "" : "q-7";
+        REQUIRE(strcmp(q->query->cause ? q->query->cause : "", want) == 0 && q->query->payload.len == 1 &&
+                    q->query->payload.data[0] == 'p',
+                "question %zu reached the Core with the cause %s", queries, q->query->cause);
+    }
+    REQUIRE(queries == 2, "%zu questions reached the Core", queries);
+done:
+    yoke_error_clear(&err);
+    yoke_response_free(r);
+    if (a != NULL) {
+        yoke_detach(a);
+    }
+    core_stop(k);
+}
+
+/* ---- case 12: a stream followed ---- */
+
+typedef struct follow_script {
+    int starts, subscribes, releases;
+} follow_script;
+
+static void script_restarts(core_conn *c, void *arg) {
+    follow_script *s = arg;
+    core_send(c, core_opening("standing", 1, NULL, 0));
+    const Yoke__Interface__V1__ClientFrame *f;
+    while (core_next(c, &f, -1) == CORE_FRAME) {
+        const Yoke__Interface__V1__Request *r = request_of(f);
+        if (r == NULL) {
+            continue;
+        }
+        Yoke__Interface__V1__Response resp = YOKE__INTERFACE__V1__RESPONSE__INIT;
+        if (r->operation_case == YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_START) {
+            s->starts++;
+            if (s->starts == 2 || s->starts == 3) {
+                Yoke__Interface__V1__Refusal refusal = YOKE__INTERFACE__V1__REFUSAL__INIT;
+                refusal.code = (char *)"unit.not_running";
+                refusal.message = (char *)"restarting";
+                say_refusal(c, f->call, &refusal);
+                continue;
+            }
+            Yoke__Interface__V1__Acknowledged ack = YOKE__INTERFACE__V1__ACKNOWLEDGED__INIT;
+            resp.answer_case = YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_START;
+            resp.stream_start = &ack;
+            say_answer(c, f->call, &resp);
+        } else if (r->operation_case == YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_SUBSCRIBE) {
+            s->subscribes++;
+            char id[16], payload[32];
+            snprintf(id, sizeof id, "d-%d", s->subscribes);
+            snprintf(payload, sizeof payload, "frame of %s", id);
+            Yoke__Interface__V1__Delivering delivering = YOKE__INTERFACE__V1__DELIVERING__INIT;
+            delivering.delivery = id;
+            delivering.arrives_case = YOKE__INTERFACE__V1__DELIVERING__ARRIVES_CONNECTION;
+            delivering.connection = 1;
+            delivering.flowing = 1;
+            resp.answer_case = YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_SUBSCRIBE;
+            resp.stream_subscribe = &delivering;
+            say_answer(c, f->call, &resp);
+            Yoke__Interface__V1__StreamDelivery sd = YOKE__INTERFACE__V1__STREAM_DELIVERY__INIT;
+            sd.delivery = id;
+            sd.sequence = 1;
+            sd.payload.data = (uint8_t *)payload;
+            sd.payload.len = strlen(payload);
+            Yoke__Interface__V1__CoreFrame frame = YOKE__INTERFACE__V1__CORE_FRAME__INIT;
+            frame.call = id;
+            frame.carries_case = YOKE__INTERFACE__V1__CORE_FRAME__CARRIES_DELIVERY;
+            frame.delivery = &sd;
+            core_send(c, &frame);
+            if (s->subscribes == 1) {
+                /* The unit's Session ended: so does its delivery. */
+                say_completion(c, id);
+            }
+        } else if (r->operation_case == YOKE__INTERFACE__V1__REQUEST__OPERATION_STREAM_UNSUBSCRIBE) {
+            s->releases++;
+            Yoke__Interface__V1__Released released = YOKE__INTERFACE__V1__RELEASED__INIT;
+            resp.answer_case = YOKE__INTERFACE__V1__RESPONSE__ANSWER_STREAM_UNSUBSCRIBE;
+            resp.stream_unsubscribe = &released;
+            say_answer(c, f->call, &resp);
+        }
+    }
+}
+
+// std: yoke-sdk-c:the-interface-library.12
+static void test_a_stream_followed_is_subscribed_again_when_its_delivery_ends(void) {
+    follow_script script = {0};
+    core *k = core_start(check_dir(), script_restarts, &script);
+    yoke_error err = {0};
+    yoke_follow *f = NULL;
+    yoke_frame frame = {0};
+    yoke_attachment *a = yoke_attach(core_socket(k), NULL, &err);
+    REQUIRE(a != NULL, "the attachment failed");
+    f = yoke_follow_stream(a, "acquire", "spectra", NULL, 0, &err);
+    REQUIRE(f != NULL, "the follow failed: %s", code_of(&err));
+    for (int n = 1; n <= 2; n++) {
+        char want[32], delivery[16];
+        snprintf(delivery, sizeof delivery, "d-%d", n);
+        snprintf(want, sizeof want, "frame of %s", delivery);
+        REQUIRE(yoke_follow_next(f, &frame, 5000, &err) == YOKE_WAIT_GOT &&
+                    frame.payload_len == strlen(want) &&
+                    memcmp(frame.payload, want, frame.payload_len) == 0 &&
+                    strcmp(yoke_follow_delivery(f), delivery) == 0,
+                "the frame of %s did not come on it", delivery);
+        yoke_frame_clear(&frame);
+    }
+    REQUIRE(yoke_follow_close(f, &err) == 0, "the close was refused: %s", code_of(&err));
+    f = NULL;
+    REQUIRE(script.starts == 4 && script.subscribes == 2 && script.releases == 2,
+            "the stream was started %d times, subscribed %d and released %d", script.starts,
+            script.subscribes, script.releases);
+done:
+    yoke_frame_clear(&frame);
+    yoke_error_clear(&err);
+    if (f != NULL) {
+        yoke_follow_close(f, NULL);
+    }
+    if (a != NULL) {
+        yoke_detach(a);
+    }
+    core_stop(k);
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-interface-library.01",
@@ -1129,6 +1301,9 @@ int main(void) {
         {"yoke-sdk-c:the-interface-library.09",
          test_a_panel_built_on_the_library_names_nothing_of_the_administrative_contract},
         {"yoke-sdk-c:the-interface-library.10", test_a_reader_of_the_ring_waits_on_its_wake_word},
+        {"yoke-sdk-c:the-interface-library.11", test_a_question_may_name_its_cause},
+        {"yoke-sdk-c:the-interface-library.12",
+         test_a_stream_followed_is_subscribed_again_when_its_delivery_ends},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }

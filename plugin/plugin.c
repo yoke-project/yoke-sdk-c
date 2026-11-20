@@ -7,6 +7,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <linux/futex.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -146,6 +147,9 @@ static const char *governed(yoke_object_kind kind) {
         return "occurrence";
     case YOKE_GOVERNS_SURFACE:
         return "surface";
+    case YOKE_GOVERNS_USE_QUERY:
+    case YOKE_GOVERNS_USE_STREAM:
+        return NULL;
     }
     return NULL;
 }
@@ -188,12 +192,52 @@ char *yoke_manifest(const yoke_declaration *d) {
     ids(out, "commands", d->commands);
     ids(out, "queries", d->queries);
     ids(out, "occurrences", d->occurrences);
+    if (d->uses != NULL && d->uses[0].need != NULL) {
+        fputs("uses:\n", out);
+        for (const yoke_use *u = d->uses; u->need != NULL; u++) {
+            fputs("  ", out);
+            quoted(out, u->need);
+            bool questions = u->questions != NULL && u->questions[0] != NULL;
+            bool streams = u->streams != NULL && u->streams[0] != NULL;
+            fputs(questions || streams ? ":\n" : ": {}\n", out);
+            const char *const *lists[] = {questions ? u->questions : NULL, streams ? u->streams : NULL};
+            const char *keys[] = {"questions", "streams"};
+            for (int k = 0; k < 2; k++) {
+                if (lists[k] == NULL) {
+                    continue;
+                }
+                fprintf(out, "    %s:\n", keys[k]);
+                for (size_t i = 0; lists[k][i] != NULL; i++) {
+                    fputs("      - ", out);
+                    quoted(out, lists[k][i]);
+                    fputc('\n', out);
+                }
+            }
+        }
+    }
+    if (d->rewrites != NULL && d->rewrites[0] != NULL) {
+        fputs("rewrites:\n", out);
+        for (size_t i = 0; d->rewrites[i] != NULL; i++) {
+            fputs("  - ", out);
+            quoted(out, d->rewrites[i]);
+            fputc('\n', out);
+        }
+    }
     if (d->capabilities != NULL && d->capabilities[0].name != NULL) {
         fputs("capabilities:\n", out);
         for (const yoke_capability *c = d->capabilities; c->name != NULL; c++) {
             fputs("  - name: ", out);
             quoted(out, c->name);
             fputs("\n    governs:\n", out);
+            if (c->governs.kind == YOKE_GOVERNS_USE_QUERY || c->governs.kind == YOKE_GOVERNS_USE_STREAM) {
+                fputs("      use:\n        need: ", out);
+                quoted(out, c->governs.need ? c->governs.need : "");
+                fputs(c->governs.kind == YOKE_GOVERNS_USE_QUERY ? "\n        query: " : "\n        stream: ",
+                      out);
+                quoted(out, c->governs.id ? c->governs.id : "");
+                fputc('\n', out);
+                continue;
+            }
             const char *what = governed(c->governs.kind);
             if (what != NULL) {
                 fprintf(out, "      %s: ", what);
@@ -316,6 +360,8 @@ void yoke_event_clear(yoke_event *event) {
     yoke_error_clear(&event->error);
     free(event->cause);
     free(event->line);
+    free(event->asker);
+    free(event->chain);
     memset(event, 0, sizeof *event);
 }
 
@@ -934,8 +980,13 @@ static void handle(yoke_unit *u, const Yoke__Plugin__V1__Envelope *e) {
         }
     case YOKE__PLUGIN__V1__ENVELOPE__PAYLOAD_QUERY:
         if (e->query->kind_case == YOKE__PLUGIN__V1__QUERY__KIND_QUESTION) {
-            yoke_event ev = {
-                .kind = YOKE_QUESTION, .id = strdup(e->message_id), .type = strdup(e->query->question->type)};
+            const Yoke__Plugin__V1__Query__Question *q = e->query->question;
+            yoke_event ev = {.kind = YOKE_QUESTION,
+                             .id = strdup(e->message_id),
+                             .type = strdup(q->type),
+                             .asker = strdup(q->asker ? q->asker : ""),
+                             .deadline_ms = q->deadline,
+                             .chain = strdup(q->chain ? q->chain : "")};
             copy_bytes(e->query->question->payload, &ev.payload, &ev.payload_len);
             push_now(u, &ev);
         }
@@ -1455,4 +1506,54 @@ void yoke_free(yoke_unit *u) {
     free(u->bind);
     free(u);
     grpc_shutdown();
+}
+
+/* ---- a secret the unit rewrites ---- */
+
+int yoke_rewrite(const char *path, const void *value, size_t len, yoke_error *err) {
+    const char *slash = strrchr(path, '/');
+    char *dir = slash == NULL ? strdup(".") : strndup(path, slash == path ? 1 : (size_t)(slash - path));
+    char *next = NULL;
+    if (asprintf(&next, "%s/value.new", dir) < 0) {
+        free(dir);
+        yoke_error_say(err, "memory ran out");
+        return -1;
+    }
+    const char *step = "written";
+    int fd = open(next, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    bool ok = fd >= 0;
+    for (size_t at = 0; ok && at < len;) {
+        ssize_t n = write(fd, (const unsigned char *)value + at, len - at);
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        ok = n > 0;
+        at += ok ? (size_t)n : 0;
+    }
+    if (ok && fsync(fd) != 0) {
+        ok = false, step = "flushed";
+    }
+    if (fd >= 0 && close(fd) != 0 && ok) {
+        ok = false, step = "closed";
+    }
+    if (ok && rename(next, path) != 0) {
+        ok = false, step = "renamed over its value";
+    }
+    if (!ok) {
+        int e = errno;
+        unlink(next);
+        yoke_error_say(err, "the secret at %s cannot be rewritten: %s was not %s: %s", path, next, step,
+                       strerror(e));
+        free(next);
+        free(dir);
+        return -1;
+    }
+    int d = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (d >= 0) {
+        fsync(d);
+        close(d);
+    }
+    free(next);
+    free(dir);
+    return 0;
 }

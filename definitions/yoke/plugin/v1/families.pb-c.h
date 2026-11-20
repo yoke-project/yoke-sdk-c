@@ -221,10 +221,25 @@ struct  Yoke__Plugin__V1__Query__Question
   ProtobufCMessage base;
   char *type;
   ProtobufCBinaryData payload;
+  /*
+   * Who asked, filled by the Core from the channel the question came on and never from a request:
+   * unit:<unit> for a need's channel, channel:<name> for a declared one, operator:<person> for the
+   * administrative surface.
+   */
+  char *asker;
+  /*
+   * The instant the asker stops waiting, in milliseconds since the epoch, filled by the Core.
+   */
+  uint64_t deadline;
+  /*
+   * The chain this question belongs to, 32 lower-case hex digits, filled by the Core: new for a
+   * question no other caused, its cause's otherwise.
+   */
+  char *chain;
 };
 #define YOKE__PLUGIN__V1__QUERY__QUESTION__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&yoke__plugin__v1__query__question__descriptor) \
-    , (char *)protobuf_c_empty_string, {0,NULL} }
+    , (char *)protobuf_c_empty_string, {0,NULL}, (char *)protobuf_c_empty_string, 0, (char *)protobuf_c_empty_string }
 
 
 struct  Yoke__Plugin__V1__Query__Answer

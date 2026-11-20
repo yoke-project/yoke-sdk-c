@@ -127,6 +127,9 @@ struct yoke_delivery {
     size_t ring_size;
     uint32_t slots, capacity;
     uint64_t next;
+    /* The ring's word moved with nothing published: the Core does so after every stop and every end, and
+       the lifeline's message is then on its way, so the reader waits for it there. */
+    bool woken;
 };
 
 int yoke_interface_contract(void) { return YOKE__INTERFACE__V1__CONTRACT__CONTRACT_VERSION; }
@@ -1033,7 +1036,16 @@ int yoke_command(yoke_attachment *a, const char *unit, const char *type, const v
 
 int yoke_ask(yoke_attachment *a, const char *unit, const char *type, const void *payload, size_t len,
              Yoke__Interface__V1__Response **answer, yoke_error *err) {
+    return yoke_ask_caused(a, NULL, unit, type, payload, len, answer, err);
+}
+
+int yoke_ask_caused(yoke_attachment *a, const char *cause, const char *unit, const char *type,
+                    const void *payload, size_t len, Yoke__Interface__V1__Response **answer,
+                    yoke_error *err) {
     Yoke__Interface__V1__Question question = YOKE__INTERFACE__V1__QUESTION__INIT;
+    if (cause != NULL) {
+        question.cause = (char *)cause;
+    }
     question.unit = (char *)unit;
     question.type = (char *)type;
     question.payload.data = (uint8_t *)payload;
@@ -1458,8 +1470,8 @@ static int read_ring(yoke_delivery *d, yoke_frame *frame) {
    one byte, a stop of length zero, the end at its closing — and the ring read as it is published. With no
    ring mapped the lifeline is waited on; with one, the ring's wake word is, with no bound but the caller's:
    the producer wakes it at every frame, and the Core of 0.16.0 after every stop and every end the lifeline
-   carries, the message already written, so the lifeline is read when the word moves and never at an
-   interval. */
+   carries, so when the word moves with nothing published the lifeline is waited on, its message on its way,
+   and never read at an interval. */
 static int next_on_the_ring(yoke_delivery *d, yoke_frame *frame, int timeout_ms, yoke_error *err) {
     struct timespec by;
     if (timeout_ms >= 0) {
@@ -1510,21 +1522,25 @@ static int next_on_the_ring(yoke_delivery *d, yoke_frame *frame, int timeout_ms,
                     }
                 }
             }
+            d->woken = false;
             continue;
         }
         uint32_t *word = d->ring != NULL ? (uint32_t *)(d->ring + 32) : NULL;
         uint32_t seen = word != NULL ? __atomic_load_n(word, __ATOMIC_ACQUIRE) : 0;
         if (d->ring != NULL && read_ring(d, frame)) {
+            d->woken = false;
             return YOKE_WAIT_GOT;
         }
         int left = left_of(timeout_ms, &by);
         if (left == 0) {
             return YOKE_WAIT_TIMEOUT;
         }
-        if (word != NULL) {
+        if (word != NULL && !d->woken) {
             /* Shared, not private: the producer and the Core that wake it are other processes. */
             struct timespec bound = {.tv_sec = left / 1000, .tv_nsec = (long)(left % 1000) * 1000000L};
-            syscall(SYS_futex, word, FUTEX_WAIT, seen, left < 0 ? NULL : &bound, NULL, 0);
+            /* Woken, and not timed out nor finding the word already moved: a frame is read next, and with
+               none the wake was the Core's. */
+            d->woken = syscall(SYS_futex, word, FUTEX_WAIT, seen, left < 0 ? NULL : &bound, NULL, 0) == 0;
         } else {
             struct pollfd w = {.fd = d->fd, .events = POLLIN};
             poll(&w, 1, left);
@@ -1673,5 +1689,117 @@ int yoke_delivery_release(yoke_delivery *d, yoke_error *err) {
     }
     free(d->id);
     free(d);
+    return result;
+}
+
+/* ---- a stream followed ---- */
+
+struct yoke_follow {
+    yoke_attachment *a;
+    char *unit, *stream;
+    yoke_reads reads[2];
+    size_t n_reads;
+    yoke_delivery *current;
+    char *last; /* the delivery the last frame came on */
+};
+
+/* Whether a refusal says the unit is not there yet — not running, or running with no Session — which a
+   follow waits out. */
+static bool returning(const yoke_error *err) {
+    return err->code != NULL &&
+           (strcmp(err->code, "unit.not_running") == 0 || strcmp(err->code, "unit.no_session") == 0);
+}
+
+/* Starts the stream, where it may, and subscribes to it, until it succeeds, the unit's absence aside. */
+static int follow_subscribe(yoke_follow *f, yoke_error *err) {
+    for (;;) {
+        yoke_error started = {0};
+        bool there = yoke_start_stream(f->a, f->unit, f->stream, NULL, &started) == 0 || !returning(&started);
+        yoke_error_clear(&started);
+        if (there) {
+            /* A start refused for any other reason leaves a stream that may flow anyway: the subscription
+               says. */
+            yoke_error_clear(err);
+            f->current = yoke_subscribe_stream_reading(f->a, f->unit, f->stream, f->reads, f->n_reads, err);
+            if (f->current != NULL) {
+                return 0;
+            }
+            if (!returning(err)) {
+                return -1;
+            }
+        }
+        struct timespec pause = {.tv_sec = 0, .tv_nsec = YOKE_FOLLOW_RETRY_MS * 1000000L};
+        nanosleep(&pause, NULL);
+    }
+}
+
+yoke_follow *yoke_follow_stream(yoke_attachment *a, const char *unit, const char *stream,
+                                const yoke_reads *reads, size_t n_reads, yoke_error *err) {
+    yoke_follow *f = calloc(1, sizeof *f);
+    f->a = a;
+    f->unit = strdup(unit);
+    f->stream = strdup(stream);
+    if (reads == NULL) {
+        f->reads[0] = YOKE_READS_STREAM_SOCKET;
+        f->reads[1] = YOKE_READS_SHARED_OBJECT;
+        f->n_reads = 2;
+    } else {
+        f->n_reads = n_reads > 2 ? 2 : n_reads;
+        memcpy(f->reads, reads, f->n_reads * sizeof *reads);
+    }
+    if (follow_subscribe(f, err) != 0) {
+        free(f->unit);
+        free(f->stream);
+        free(f);
+        return NULL;
+    }
+    return f;
+}
+
+int yoke_follow_next(yoke_follow *f, yoke_frame *frame, int timeout_ms, yoke_error *err) {
+    for (;;) {
+        if (f->current == NULL) {
+            yoke_error_say(err, "the follow has ended");
+            return YOKE_WAIT_FAILED;
+        }
+        yoke_error_clear(err);
+        int got = yoke_delivery_next(f->current, frame, timeout_ms, err);
+        if (got == YOKE_WAIT_GOT) {
+            free(f->last);
+            f->last = strdup(yoke_delivery_id(f->current));
+            return got;
+        }
+        if (got == YOKE_WAIT_TIMEOUT || (got == YOKE_WAIT_FAILED && !returning(err))) {
+            return got;
+        }
+        /* The delivery ended with the unit's Session: what was opened for it is let go, and the stream
+           followed again. */
+        yoke_error released = {0};
+        yoke_delivery_release(f->current, &released);
+        yoke_error_clear(&released);
+        f->current = NULL;
+        yoke_error_clear(err);
+        if (follow_subscribe(f, err) != 0) {
+            return YOKE_WAIT_FAILED;
+        }
+    }
+}
+
+const char *yoke_follow_delivery(const yoke_follow *f) {
+    if (f->last != NULL) {
+        return f->last;
+    }
+    return f->current != NULL ? yoke_delivery_id(f->current) : "";
+}
+
+int yoke_follow_close(yoke_follow *f, yoke_error *err) {
+    int result = 0;
+    if (f->current != NULL) {
+        result = yoke_delivery_release(f->current, err);
+    }
+    free(f->unit);
+    free(f->stream);
+    free(f->last);
+    free(f);
     return result;
 }
