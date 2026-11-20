@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 #include <strings.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -26,11 +28,11 @@ static const yoke_declaration station = {
     .occurrences = (const char *const[]){"calibration.drift", NULL},
     .capabilities =
         (const yoke_capability[]){
-            {"acquire.spectra", {YOKE_GOVERNS_STREAM, "station.spectra"}},
-            {"acquire.preview", {YOKE_GOVERNS_STREAM, "station.preview"}},
-            {"acquire.calibrate", {YOKE_GOVERNS_COMMAND, "calibrate"}},
-            {"acquire.status", {YOKE_GOVERNS_QUERY, "head-status"}},
-            {"acquire.drift", {YOKE_GOVERNS_OCCURRENCE, "calibration.drift"}},
+            {"acquire.spectra", {YOKE_GOVERNS_STREAM, "station.spectra", NULL}},
+            {"acquire.preview", {YOKE_GOVERNS_STREAM, "station.preview", NULL}},
+            {"acquire.calibrate", {YOKE_GOVERNS_COMMAND, "calibrate", NULL}},
+            {"acquire.status", {YOKE_GOVERNS_QUERY, "head-status", NULL}},
+            {"acquire.drift", {YOKE_GOVERNS_OCCURRENCE, "calibration.drift", NULL}},
             {0},
         },
 };
@@ -974,6 +976,140 @@ done:
     close_all(ch, u);
 }
 
+// std: yoke-sdk-c:the-plugin-library.21
+static void test_a_declaration_says_what_it_uses_and_the_secrets_it_rewrites(void) {
+    const yoke_declaration calendar = {
+        .id = "com.yoke.calendar",
+        .needs = (const char *const[]){"unit:accounts", "secret:refresh", NULL},
+        .capabilities =
+            (const yoke_capability[]){
+                {"query.oauth-token.ask", {YOKE_GOVERNS_USE_QUERY, "oauth.token", "accounts"}},
+                {"stream.oauth-status.follow", {YOKE_GOVERNS_USE_STREAM, "oauth.status", "accounts"}},
+                {0},
+            },
+        .uses =
+            (const yoke_use[]){
+                {"accounts", (const char *const[]){"oauth.token", NULL},
+                 (const char *const[]){"oauth.status", NULL}},
+                {0},
+            },
+        .rewrites = (const char *const[]){"refresh", NULL},
+    };
+    char *got = yoke_manifest(&calendar);
+    char *plain = yoke_manifest(&station);
+    REQUIRE(got != NULL && plain != NULL, "no Manifest was generated");
+    static const char want[] = "manifest: 1\n"
+                               "id: \"com.yoke.calendar\"\n"
+                               "protocol: 1\n"
+                               "needs:\n"
+                               "  - \"unit:accounts\"\n"
+                               "  - \"secret:refresh\"\n"
+                               "uses:\n"
+                               "  \"accounts\":\n"
+                               "    questions:\n"
+                               "      - \"oauth.token\"\n"
+                               "    streams:\n"
+                               "      - \"oauth.status\"\n"
+                               "rewrites:\n"
+                               "  - \"refresh\"\n"
+                               "capabilities:\n"
+                               "  - name: \"query.oauth-token.ask\"\n"
+                               "    governs:\n"
+                               "      use:\n"
+                               "        need: \"accounts\"\n"
+                               "        query: \"oauth.token\"\n"
+                               "  - name: \"stream.oauth-status.follow\"\n"
+                               "    governs:\n"
+                               "      use:\n"
+                               "        need: \"accounts\"\n"
+                               "        stream: \"oauth.status\"\n";
+    REQUIRE(strcmp(got, want) == 0, "the Manifest generated is\n%s", got);
+    REQUIRE(strstr(plain, "uses:") == NULL && strstr(plain, "rewrites:") == NULL &&
+                strstr(plain, "use:") == NULL,
+            "a declaration that uses nothing says it does:\n%s", plain);
+done:
+    free(got);
+    free(plain);
+}
+
+// std: yoke-sdk-c:the-plugin-library.22
+static void test_a_question_surfaces_who_asked_its_deadline_and_its_chain(void) {
+    channel *ch = NULL;
+    yoke_event question = {0};
+    char id[32];
+    yoke_unit *u = open_unit(&ch, NULL);
+    REQUIRE(u != NULL, "the unit did not start");
+    Yoke__Plugin__V1__Query__Question q = YOKE__PLUGIN__V1__QUERY__QUESTION__INIT;
+    q.type = "head-status";
+    q.asker = "unit:archive";
+    q.deadline = 1795000000123ULL;
+    q.chain = "0123456789abcdef0123456789abcdef";
+    Yoke__Plugin__V1__Query query = YOKE__PLUGIN__V1__QUERY__INIT;
+    query.kind_case = YOKE__PLUGIN__V1__QUERY__KIND_QUESTION;
+    query.question = &q;
+    Yoke__Plugin__V1__Envelope e = YOKE__PLUGIN__V1__ENVELOPE__INIT;
+    e.payload_case = YOKE__PLUGIN__V1__ENVELOPE__PAYLOAD_QUERY;
+    e.query = &query;
+    channel_send(ch, &e, id);
+    REQUIRE(next_of(u, &question, YOKE_QUESTION), "the question was not surfaced");
+    REQUIRE(strcmp(question.id, id) == 0 && strcmp(question.asker, "unit:archive") == 0 &&
+                question.deadline_ms == 1795000000123ULL &&
+                strcmp(question.chain, "0123456789abcdef0123456789abcdef") == 0,
+            "the question surfaced is %s, asked by %s, by %llu, in %s", question.id, question.asker,
+            (unsigned long long)question.deadline_ms, question.chain);
+    REQUIRE(yoke_answer(u, &question, "42", 2, NULL) == 0, "the answer failed");
+    long i = channel_await(ch, YOKE__PLUGIN__V1__ENVELOPE__PAYLOAD_QUERY, 0, 3000);
+    REQUIRE(i >= 0, "no answer arrived");
+    REQUIRE(strcmp(channel_arrival(ch, (size_t)i, NULL)->correlation_id, id) == 0,
+            "the answer is not correlated to the question");
+done:
+    yoke_event_clear(&question);
+    close_all(ch, u);
+}
+
+// std: yoke-sdk-c:the-plugin-library.23
+static void test_a_secret_the_unit_rewrites_is_replaced_in_place(void) {
+    char *dir = NULL, *path = NULL, *text = NULL;
+    REQUIRE(asprintf(&dir, "%s/secret", check_dir()) > 0 && mkdir(dir, 0700) == 0, "no secret directory");
+    REQUIRE(asprintf(&path, "%s/value", dir) > 0, "no path");
+    FILE *f = fopen(path, "w");
+    REQUIRE(f != NULL, "the value cannot be written");
+    fputs("first", f);
+    fclose(f);
+    yoke_error err = {0};
+    REQUIRE(yoke_rewrite(path, "second", 6, &err) == 0, "the rewrite failed: %s", err.message);
+    text = check_read(path);
+    REQUIRE(text != NULL && strcmp(text, "second") == 0, "the value is %s", text ? text : "(none)");
+    struct stat st;
+    REQUIRE(stat(path, &st) == 0 && (st.st_mode & 0777) == 0600, "the value's mode is %o", st.st_mode & 0777);
+    DIR *d = opendir(dir);
+    int entries = 0;
+    for (struct dirent *e; d != NULL && (e = readdir(d)) != NULL;) {
+        entries += e->d_name[0] != '.';
+    }
+    if (d != NULL) {
+        closedir(d);
+    }
+    REQUIRE(entries == 1, "the directory holds %d entries, not the value alone", entries);
+    chmod(dir, 0500);
+    if (access(dir, W_OK) != 0) {
+        REQUIRE(yoke_rewrite(path, "third", 5, &err) != 0,
+                "a rewrite into an unwritable directory succeeded");
+        yoke_error_clear(&err);
+        free(text);
+        text = check_read(path);
+        REQUIRE(text != NULL && strcmp(text, "second") == 0, "a failed rewrite left %s",
+                text ? text : "(none)");
+    }
+done:
+    if (dir != NULL) {
+        chmod(dir, 0700);
+    }
+    free(text);
+    free(path);
+    free(dir);
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-plugin-library.01", test_a_declaration_generates_the_manifest},
@@ -997,6 +1133,10 @@ int main(void) {
         {"yoke-sdk-c:the-plugin-library.18", test_the_registration_offers_the_shared_ring},
         {"yoke-sdk-c:the-plugin-library.19", test_on_the_shared_ring_emit_writes_the_slot_and_wakes},
         {"yoke-sdk-c:the-plugin-library.20", test_a_unit_is_named_after_its_executable},
+        {"yoke-sdk-c:the-plugin-library.21",
+         test_a_declaration_says_what_it_uses_and_the_secrets_it_rewrites},
+        {"yoke-sdk-c:the-plugin-library.22", test_a_question_surfaces_who_asked_its_deadline_and_its_chain},
+        {"yoke-sdk-c:the-plugin-library.23", test_a_secret_the_unit_rewrites_is_replaced_in_place},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }

@@ -134,3 +134,29 @@
 | **Precondition** | a Core that answers a subscription with the shared ring's lifeline, and on it hands a ring with nothing published |
 | **Action** | wait for a frame on a thread of its own, with no timeout, for a second; then publish one frame and wake the ring's word, as a producer does; then close the lifeline and wake the ring, as the Core does |
 | **Expected** | waiting the second, the thread woke no more than 5 times; the frame is read within 100 ms of being published, carrying its sequence, its clock and its payload; the delivery then ends |
+
+## yoke-sdk-c:the-interface-library.11 — a question may name its cause, and the cause reaches the Core with it
+
+| Field | Value |
+| --- | --- |
+| **Cites** | specs/70.60 · arch/70-interface-surface/10 §A question asked on it |
+| **Level** | L1 |
+| **Method** | test |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | an attachment to a channel that answers a question with no cause and refuses one naming a cause `use.cause.unknown` |
+| **Action** | `yoke_ask` with no cause; then `yoke_ask_caused` naming `q-7` |
+| **Expected** | the first answered; the second refused `use.cause.unknown` naming the item `q-7`; the Core sent no cause on the first and `q-7` on the second, with the payload asked |
+
+## yoke-sdk-c:the-interface-library.12 — a stream followed is started and subscribed again when its delivery ends with the unit's Session, waiting out its absence
+
+| Field | Value |
+| --- | --- |
+| **Cites** | specs/28.60 · arch/70-interface-surface/10 §When the unit bound restarts · arch/90-sdks/02 §What using a unit adds to every family |
+| **Level** | L1 |
+| **Method** | test |
+| **Not applicable in** | — |
+| **Label** | blocking |
+| **Precondition** | a channel whose first delivery carries one frame and ends, and which refuses the next two starts `unit.not_running` |
+| **Action** | `yoke_follow_stream`; `yoke_follow_next` twice; then `yoke_follow_close` |
+| **Expected** | a frame of the first delivery, then a frame of the second, each naming its delivery; the stream started four times, two of them refused; the close answered |

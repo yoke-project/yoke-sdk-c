@@ -92,7 +92,27 @@ typedef enum _Yoke__Interface__V1__Code {
   /*
    * The unit answered the Core's message with an error; the detail carries the unit's own code.
    */
-  YOKE__INTERFACE__V1__CODE__CODE_UNIT_FAILED = 17
+  YOKE__INTERFACE__V1__CODE__CODE_UNIT_FAILED = 17,
+  /*
+   * A command on a need's channel: a unit never instructs another.
+   */
+  YOKE__INTERFACE__V1__CODE__CODE_USE_COMMAND = 18,
+  /*
+   * A question or a stream on a need's channel that the need's uses does not list.
+   */
+  YOKE__INTERFACE__V1__CODE__CODE_USE_UNDECLARED = 19,
+  /*
+   * A question on a need's channel names as its cause no question outstanding at that unit.
+   */
+  YOKE__INTERFACE__V1__CODE__CODE_USE_CAUSE_UNKNOWN = 20,
+  /*
+   * A question caused by another would have less than 100 ms left; the unit is never asked.
+   */
+  YOKE__INTERFACE__V1__CODE__CODE_DEADLINE_EXHAUSTED = 21,
+  /*
+   * A stop of a stream a need's channel holds, from another channel. The detail names the holding unit.
+   */
+  YOKE__INTERFACE__V1__CODE__CODE_STREAM_HELD = 22
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(YOKE__INTERFACE__V1__CODE)
 } Yoke__Interface__V1__Code;
 

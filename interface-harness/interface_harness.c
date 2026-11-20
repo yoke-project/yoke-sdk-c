@@ -23,6 +23,7 @@ typedef struct harness {
     char *standing;
     pthread_t threads[64];
     size_t running;
+    int follows;
 } harness;
 
 /* Writes one line: the object, then a newline. Takes ownership of the object. */
@@ -285,6 +286,8 @@ typedef struct watch {
     harness *h;
     yoke_subscription *sub;
     yoke_delivery *delivery;
+    yoke_follow *follow;
+    char *follow_id;
     bool standing;
 } watch;
 
@@ -377,6 +380,45 @@ static void *watch_delivery(void *arg) {
     return NULL;
 }
 
+/* A followed stream's frames, each naming the follow and the delivery it came on, until the follow ends. */
+static void *watch_follow(void *arg) {
+    watch *w = arg;
+    for (;;) {
+        yoke_frame frame;
+        yoke_error err = {0};
+        int got = yoke_follow_next(w->follow, &frame, -1, &err);
+        yoke_error_clear(&err);
+        if (got != YOKE_WAIT_GOT) {
+            break;
+        }
+        json_object *fields = json_object_new_object();
+        field(fields, "follow", w->follow_id);
+        field(fields, "delivery", yoke_follow_delivery(w->follow));
+        json_object_object_add(fields, "sequence", json_object_new_int64((int64_t)frame.sequence));
+        json_object_object_add(fields, "sent_at", json_object_new_int64((int64_t)frame.sent_at));
+        json_object_object_add(
+            fields, "payload",
+            json_object_new_string_len((const char *)frame.payload, (int)frame.payload_len));
+        json_object *o = json_object_new_object();
+        field(o, "type", "observation");
+        field(o, "kind", "frame");
+        json_object_object_add(o, "fields", fields);
+        send_line(w->h, o);
+        yoke_frame_clear(&frame);
+    }
+    json_object *fields = json_object_new_object();
+    field(fields, "follow", w->follow_id);
+    json_object *o = json_object_new_object();
+    field(o, "type", "observation");
+    field(o, "kind", "follow-ended");
+    json_object_object_add(o, "fields", fields);
+    send_line(w->h, o);
+    yoke_follow_close(w->follow, NULL);
+    free(w->follow_id);
+    free(w);
+    return NULL;
+}
+
 static void watching(harness *h, void *(*run)(void *), watch *w) {
     if (h->running < sizeof h->threads / sizeof h->threads[0]) {
         pthread_create(&h->threads[h->running++], NULL, run, w);
@@ -436,9 +478,9 @@ static void answered(json_object *result, Yoke__Interface__V1__Response *answer,
 
 static void act(harness *h, const char *verb, json_object *args, json_object *result) {
     yoke_error err = {0};
-    static const char *const known[] = {
-        "authenticate", "read",        "subscribe",        "confirm", "command", "query",
-        "stream-start", "stream-stop", "stream-subscribe", "reclaim", NULL};
+    static const char *const known[] = {"authenticate",     "read",          "subscribe",    "confirm",
+                                        "command",          "query",         "stream-start", "stream-stop",
+                                        "stream-subscribe", "stream-follow", "reclaim",      NULL};
     if (strcmp(verb, "attach") == 0) {
         attach(h, arg(args, "channel"), result);
         return;
@@ -508,7 +550,8 @@ static void act(harness *h, const char *verb, json_object *args, json_object *re
         rc = command
                  ? yoke_command(a, arg(args, "unit"), arg(args, "type"), payload, strlen(payload), &answer,
                                 &err)
-                 : yoke_ask(a, arg(args, "unit"), arg(args, "type"), payload, strlen(payload), &answer, &err);
+                 : yoke_ask_caused(a, arg(args, "cause")[0] ? arg(args, "cause") : NULL, arg(args, "unit"),
+                                   arg(args, "type"), payload, strlen(payload), &answer, &err);
         if (rc == 0) {
             if (command) {
                 value = acknowledged(answer->command);
@@ -525,6 +568,22 @@ static void act(harness *h, const char *verb, json_object *args, json_object *re
                    : yoke_stop_stream(a, arg(args, "unit"), arg(args, "stream"), &answer, &err);
         if (rc == 0) {
             value = acknowledged(start ? answer->stream_start : answer->stream_stop);
+        }
+    } else if (strcmp(verb, "stream-follow") == 0) {
+        /* A stream followed across its unit's restarts. */
+        yoke_follow *f = yoke_follow_stream(a, arg(args, "unit"), arg(args, "stream"), NULL, 0, &err);
+        if (f == NULL) {
+            rc = -1;
+        } else {
+            watch *w = calloc(1, sizeof *w);
+            w->h = h;
+            w->follow = f;
+            if (asprintf(&w->follow_id, "follow-%d", ++h->follows) < 0) {
+                w->follow_id = NULL;
+            }
+            value = json_object_new_object();
+            text(value, "follow", w->follow_id);
+            watching(h, watch_follow, w);
         }
     } else if (strcmp(verb, "reclaim") == 0) {
         rc = yoke_reclaim(a, &answer, &err);

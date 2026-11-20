@@ -16,6 +16,7 @@
 #define YOKE_PLUGIN_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "yoke/base.h"
 
@@ -39,12 +40,15 @@ typedef enum yoke_object_kind {
     YOKE_GOVERNS_QUERY,
     YOKE_GOVERNS_OCCURRENCE,
     YOKE_GOVERNS_SURFACE,
+    YOKE_GOVERNS_USE_QUERY,  /* a question of a `unit` need, named in uses */
+    YOKE_GOVERNS_USE_STREAM, /* a stream of a `unit` need, named in uses */
 } yoke_object_kind;
 
-/* The one thing a capability governs. */
+/* The one thing a capability governs. A use names its need too: the question or the stream is id. */
 typedef struct yoke_object {
     yoke_object_kind kind;
     const char *id;
+    const char *need;
 } yoke_object;
 
 /* What an operator may grant, governing exactly one object. */
@@ -52,6 +56,16 @@ typedef struct yoke_capability {
     const char *name;
     yoke_object governs;
 } yoke_capability;
+
+/*
+ * What a Plugin uses of one `unit` need: questions it asks and streams it follows, in the bound unit's
+ * vocabulary, each list ending with a NULL. There are no commands: a unit never instructs another.
+ */
+typedef struct yoke_use {
+    const char *need;
+    const char *const *questions;
+    const char *const *streams;
+} yoke_use;
 
 /*
  * What a Plugin says about itself: what is true of the binary wherever it runs. Every list ends with a
@@ -66,6 +80,10 @@ typedef struct yoke_declaration {
     const char *const *queries;
     const char *const *occurrences;
     const yoke_capability *capabilities;
+    /* For each `unit` need, what the Plugin uses of the unit bound to it; ends with a NULL need. */
+    const yoke_use *uses;
+    /* The `secret` needs whose value the unit replaces itself, with yoke_rewrite. */
+    const char *const *rewrites;
 } yoke_declaration;
 
 /* The document the declaration generates, in a string the caller frees; NULL if memory ran out. */
@@ -129,6 +147,13 @@ typedef struct yoke_event {
     char *cause;       /* ended by a revocation: liveness lost, plugin disabled, scope exceeded, protocol
                           failure */
     char *line;        /* ended */
+    /* question: who asked — `unit:<unit>`, `channel:<name>` or `operator:<person>` —, the instant the asker
+       stops waiting, in milliseconds since the epoch, and the chain's identity, 32 lower-case hex digits.
+       The Core states them, the unit none; a unit asking on a need's channel while it answers names id as
+       the cause. */
+    char *asker;
+    uint64_t deadline_ms;
+    char *chain;
 } yoke_event;
 
 /* Releases what an event holds. */
@@ -200,6 +225,14 @@ int yoke_health(yoke_unit *unit, unsigned grade, const char *line, yoke_error *e
  * written, and the library refuses rather than make one.
  */
 int yoke_emit(yoke_unit *unit, const char *stream, const void *payload, size_t len, yoke_error *err);
+
+/*
+ * Replaces the value of a secret the Plugin declares in rewrites, at path — the value `${bind.<name>}`
+ * resolved to — without a restart: the new value is written beside it as `value.new`, flushed, and renamed
+ * over it, so a reader meets the old value or the new one and never a part of either. The Core never opens
+ * it; the unit reads it again when it next needs it.
+ */
+int yoke_rewrite(const char *path, const void *value, size_t len, yoke_error *err);
 
 #ifdef __cplusplus
 }

@@ -361,6 +361,61 @@ done:
     free(script);
 }
 
+static void script_refuses_a_cause(core_conn *c, void *arg) {
+    (void)arg;
+    core_send(c, core_opening("standing", 1, NULL, 0));
+    const Yoke__Interface__V1__ClientFrame *f;
+    while (core_next(c, &f, -1) == CORE_FRAME) {
+        const Yoke__Interface__V1__Request *r = request_of(f);
+        if (r == NULL) {
+            continue;
+        }
+        Yoke__Interface__V1__Refusal refusal = YOKE__INTERFACE__V1__REFUSAL__INIT;
+        Yoke__Interface__V1__Subject subject = YOKE__INTERFACE__V1__SUBJECT__INIT;
+        if (r->operation_case == YOKE__INTERFACE__V1__REQUEST__OPERATION_QUERY && r->query->cause != NULL &&
+            r->query->cause[0] != '\0') {
+            refusal.code = (char *)"use.cause.unknown";
+            refusal.message = (char *)"no such question";
+            refusal.detail_case = YOKE__INTERFACE__V1__REFUSAL__DETAIL_ITEM;
+            refusal.item = r->query->cause;
+        } else {
+            refusal.code = (char *)"subject.unknown";
+            refusal.message = (char *)"no such unit";
+            subject.kind = (char *)"unit";
+            subject.identity = (char *)"nobody";
+            refusal.detail_case = YOKE__INTERFACE__V1__REFUSAL__DETAIL_SUBJECT;
+            refusal.subject = &subject;
+        }
+        core_send(c, core_refusal_frame(f->call, &refusal));
+    }
+}
+
+// std: yoke-sdk-c:the-interface-harness.06
+static void test_a_query_carries_its_cause_and_stream_follow_is_known(void) {
+    suite s;
+    json_object *query = NULL, *follow = NULL, *attached = NULL;
+    REQUIRE(suite_start(&s), "the harness did not connect");
+    serve_panel(&s, script_refuses_a_cause);
+    direct(&s, "a-1", "attach", "{\"channel\":\"panel\"}");
+    attached = result_of(&s, "a-1");
+    REQUIRE(attached != NULL, "attach had no result");
+    direct(&s, "q-1", "query", "{\"unit\":\"source\",\"type\":\"status\",\"cause\":\"q-none\"}");
+    query = result_of(&s, "q-1");
+    REQUIRE(query && is(query, "refusal", "use.cause.unknown") && is(query, "value.item", "q-none"),
+            "the query's result is %s", query ? json_object_to_json_string(query) : "(none)");
+    direct(&s, "f-1", "stream-follow", "{\"unit\":\"nobody\",\"stream\":\"s\"}");
+    follow = result_of(&s, "f-1");
+    REQUIRE(follow && !str(follow, "unrecognised") && is(follow, "refusal", "subject.unknown"),
+            "the follow's result is %s", follow ? json_object_to_json_string(follow) : "(none)");
+    suite_write(&s, "{\"type\":\"finish\"}");
+    int status;
+    suite_exited(&s, 5000, &status);
+done:
+    json_object_put(query);
+    json_object_put(follow);
+    json_object_put(attached);
+}
+
 int main(void) {
     static const check_case cases[] = {
         {"yoke-sdk-c:the-interface-harness.01", test_hello_first_for_the_interface_contract},
@@ -371,6 +426,7 @@ int main(void) {
          test_a_verb_it_does_not_know_is_unrecognised_and_it_holds_no_wire},
         {"yoke-sdk-c:the-interface-harness.05",
          test_the_suite_is_run_against_it_as_against_the_plugin_harness},
+        {"yoke-sdk-c:the-interface-harness.06", test_a_query_carries_its_cause_and_stream_follow_is_known},
     };
     return check_run(cases, sizeof cases / sizeof *cases);
 }

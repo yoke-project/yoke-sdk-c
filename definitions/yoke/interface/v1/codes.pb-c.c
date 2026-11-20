@@ -347,7 +347,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__suspension__descriptor =
   (ProtobufCMessageInit) yoke__interface__v1__suspension__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCEnumValue yoke__interface__v1__code__enum_values_by_number[18] =
+static const ProtobufCEnumValue yoke__interface__v1__code__enum_values_by_number[23] =
 {
   { "CODE_UNSPECIFIED", "YOKE__INTERFACE__V1__CODE__CODE_UNSPECIFIED", 0 },
   { "CODE_OPERATION_MALFORMED", "YOKE__INTERFACE__V1__CODE__CODE_OPERATION_MALFORMED", 1 },
@@ -367,11 +367,16 @@ static const ProtobufCEnumValue yoke__interface__v1__code__enum_values_by_number
   { "CODE_UNIT_UNANSWERED", "YOKE__INTERFACE__V1__CODE__CODE_UNIT_UNANSWERED", 15 },
   { "CODE_INSTANCE_STOPPING", "YOKE__INTERFACE__V1__CODE__CODE_INSTANCE_STOPPING", 16 },
   { "CODE_UNIT_FAILED", "YOKE__INTERFACE__V1__CODE__CODE_UNIT_FAILED", 17 },
+  { "CODE_USE_COMMAND", "YOKE__INTERFACE__V1__CODE__CODE_USE_COMMAND", 18 },
+  { "CODE_USE_UNDECLARED", "YOKE__INTERFACE__V1__CODE__CODE_USE_UNDECLARED", 19 },
+  { "CODE_USE_CAUSE_UNKNOWN", "YOKE__INTERFACE__V1__CODE__CODE_USE_CAUSE_UNKNOWN", 20 },
+  { "CODE_DEADLINE_EXHAUSTED", "YOKE__INTERFACE__V1__CODE__CODE_DEADLINE_EXHAUSTED", 21 },
+  { "CODE_STREAM_HELD", "YOKE__INTERFACE__V1__CODE__CODE_STREAM_HELD", 22 },
 };
 static const ProtobufCIntRange yoke__interface__v1__code__value_ranges[] = {
-{0, 0},{0, 18}
+{0, 0},{0, 23}
 };
-static const ProtobufCEnumValueIndex yoke__interface__v1__code__enum_values_by_name[18] =
+static const ProtobufCEnumValueIndex yoke__interface__v1__code__enum_values_by_name[23] =
 {
   { "CODE_AUTH_INVALID", 5 },
   { "CODE_AUTH_REQUIRED", 4 },
@@ -380,17 +385,22 @@ static const ProtobufCEnumValueIndex yoke__interface__v1__code__enum_values_by_n
   { "CODE_CHANNEL_NOT_LOCAL", 9 },
   { "CODE_CHANNEL_SUSPENDED", 8 },
   { "CODE_COMPAT_UNSUPPORTED", 3 },
+  { "CODE_DEADLINE_EXHAUSTED", 21 },
   { "CODE_INSTANCE_STOPPING", 16 },
   { "CODE_OPERATION_MALFORMED", 1 },
   { "CODE_OPERATION_UNKNOWN", 2 },
   { "CODE_SCOPE_UNDECLARED", 11 },
   { "CODE_SCOPE_WITHHELD", 12 },
+  { "CODE_STREAM_HELD", 22 },
   { "CODE_SUBJECT_UNKNOWN", 10 },
   { "CODE_UNIT_FAILED", 17 },
   { "CODE_UNIT_NOT_RUNNING", 13 },
   { "CODE_UNIT_NO_SESSION", 14 },
   { "CODE_UNIT_UNANSWERED", 15 },
   { "CODE_UNSPECIFIED", 0 },
+  { "CODE_USE_CAUSE_UNKNOWN", 20 },
+  { "CODE_USE_COMMAND", 18 },
+  { "CODE_USE_UNDECLARED", 19 },
 };
 const ProtobufCEnumDescriptor yoke__interface__v1__code__descriptor =
 {
@@ -399,9 +409,9 @@ const ProtobufCEnumDescriptor yoke__interface__v1__code__descriptor =
   "Code",
   "Yoke__Interface__V1__Code",
   "yoke.interface.v1",
-  18,
+  23,
   yoke__interface__v1__code__enum_values_by_number,
-  18,
+  23,
   yoke__interface__v1__code__enum_values_by_name,
   1,
   yoke__interface__v1__code__value_ranges,
