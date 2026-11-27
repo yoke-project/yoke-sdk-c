@@ -1,6 +1,6 @@
 module github.com/yoke-project/yoke/proto
-version v0.7.0
-digest h1:ygNXk+XrNOjpsgqH/lAalPDtn+VoHL+NCpbieMevyPs=
+version v0.8.0
+digest h1:TybjUfUYSeNcdb7ZllrkRNpNPsi53pRRxCIU4TQrsWw=
 protoc 3.21.12
 protoc-c 1.4.1
 contracts plugin interface

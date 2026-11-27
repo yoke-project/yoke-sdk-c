@@ -142,7 +142,7 @@ void   yoke__interface__v1__filter__free_unpacked
   assert(message->base.descriptor == &yoke__interface__v1__filter__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor yoke__interface__v1__event__field_descriptors[9] =
+static const ProtobufCFieldDescriptor yoke__interface__v1__event__field_descriptors[10] =
 {
   {
     "seq",
@@ -252,11 +252,24 @@ static const ProtobufCFieldDescriptor yoke__interface__v1__event__field_descript
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "line",
+    10,
+    PROTOBUF_C_LABEL_NONE,
+    PROTOBUF_C_TYPE_STRING,
+    0,   /* quantifier_offset */
+    offsetof(Yoke__Interface__V1__Event, line),
+    NULL,
+    &protobuf_c_empty_string,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned yoke__interface__v1__event__field_indices_by_name[] = {
   4,   /* field[4] = actor */
   7,   /* field[7] = cause */
   8,   /* field[8] = detail */
+  9,   /* field[9] = line */
   6,   /* field[6] = occurrence */
   0,   /* field[0] = seq */
   5,   /* field[5] = severity */
@@ -267,7 +280,7 @@ static const unsigned yoke__interface__v1__event__field_indices_by_name[] = {
 static const ProtobufCIntRange yoke__interface__v1__event__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 9 }
+  { 0, 10 }
 };
 const ProtobufCMessageDescriptor yoke__interface__v1__event__descriptor =
 {
@@ -277,7 +290,7 @@ const ProtobufCMessageDescriptor yoke__interface__v1__event__descriptor =
   "Yoke__Interface__V1__Event",
   "yoke.interface.v1",
   sizeof(Yoke__Interface__V1__Event),
-  9,
+  10,
   yoke__interface__v1__event__field_descriptors,
   yoke__interface__v1__event__field_indices_by_name,
   1,  yoke__interface__v1__event__number_ranges,

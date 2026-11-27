@@ -64,10 +64,15 @@ struct  Yoke__Interface__V1__Event
    * Typed per type, and skippable: a consumer decodes only what it knows.
    */
   ProtobufCBinaryData detail;
+  /*
+   * A sentence for a person, where the producer wrote one: a unit's occurrence, a unit's report of how well
+   * it is. Not an axis: nothing filters on it, and the Core reads it no more than it reads the detail.
+   */
+  char *line;
 };
 #define YOKE__INTERFACE__V1__EVENT__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&yoke__interface__v1__event__descriptor) \
-    , 0, (char *)protobuf_c_empty_string, NULL, NULL, NULL, 0, (char *)protobuf_c_empty_string, 0, {0,NULL} }
+    , 0, (char *)protobuf_c_empty_string, NULL, NULL, NULL, 0, (char *)protobuf_c_empty_string, 0, {0,NULL}, (char *)protobuf_c_empty_string }
 
 
 /*
