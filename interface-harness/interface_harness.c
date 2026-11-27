@@ -229,6 +229,7 @@ static json_object *event_fields(const Yoke__Interface__V1__Event *e) {
     field(o, "subject_kind", e->subject ? e->subject->kind : "");
     field(o, "subject", e->subject ? e->subject->identity : "");
     json_object_object_add(o, "severity", json_object_new_int((int)e->severity));
+    field(o, "line", e->line);
     return o;
 }
 
